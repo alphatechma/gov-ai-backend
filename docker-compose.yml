@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    expose:
+      - "80"
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - default
+
+networks:
+  default:
+    external: true
+    name: easypanel
