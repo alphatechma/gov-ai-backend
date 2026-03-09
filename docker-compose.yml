@@ -2,7 +2,7 @@ services:
   app:
     build: .
     expose:
-      - "80"
+      - "3859:3859"
     restart: unless-stopped
     env_file:
       - .env
