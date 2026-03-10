@@ -251,6 +251,79 @@ export class VotersService extends TenantAwareService<Voter> {
     return Buffer.from(arrayBuffer);
   }
 
+  async exportToExcel(
+    tenantId: string,
+    filters: { search?: string; neighborhood?: string; leaderId?: string; gender?: string },
+  ): Promise<Buffer> {
+    const qb = this.votersRepo
+      .createQueryBuilder('v')
+      .where('v.tenantId = :tenantId', { tenantId })
+      .orderBy('v.createdAt', 'DESC');
+
+    if (filters.search) {
+      qb.andWhere('(v.name ILIKE :q OR v.phone ILIKE :q)', { q: `%${filters.search}%` });
+    }
+    if (filters.neighborhood) {
+      qb.andWhere('v.neighborhood = :neighborhood', { neighborhood: filters.neighborhood });
+    }
+    if (filters.leaderId) {
+      qb.andWhere('v.leaderId = :leaderId', { leaderId: filters.leaderId });
+    }
+    if (filters.gender) {
+      qb.andWhere('v.gender = :gender', { gender: filters.gender });
+    }
+
+    const voters = await qb.getMany();
+
+    // Load leaders for name mapping
+    const leaders = await this.votersRepo.manager.query(
+      `SELECT id, name FROM leaders WHERE "tenantId" = $1`,
+      [tenantId],
+    );
+    const leaderMap = new Map<string, string>();
+    for (const l of leaders) leaderMap.set(l.id, l.name);
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Eleitores');
+
+    const headers = ['Nome', 'Telefone', 'Email', 'Genero', 'Data de Nascimento', 'Endereco', 'Bairro', 'Cidade', 'Estado', 'CEP', 'Titulo de Eleitor', 'Zona', 'Secao', 'Lideranca', 'Nivel de Apoio', 'Tags', 'Observacoes'];
+    const widths = [30, 16, 25, 12, 18, 35, 20, 20, 8, 12, 16, 8, 8, 25, 16, 20, 35];
+
+    ws.columns = headers.map((header, i) => ({ header, width: widths[i] }));
+
+    const headerRow = ws.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4A4A4A' } };
+      cell.alignment = { horizontal: 'center' };
+    });
+
+    for (const v of voters) {
+      ws.addRow([
+        v.name,
+        v.phone ?? '',
+        v.email ?? '',
+        v.gender ?? '',
+        v.birthDate ? String(v.birthDate) : '',
+        v.address ?? '',
+        v.neighborhood ?? '',
+        v.city ?? '',
+        v.state ?? '',
+        v.zipCode ?? '',
+        v.voterRegistration ?? '',
+        v.votingZone ?? '',
+        v.votingSection ?? '',
+        v.leaderId ? (leaderMap.get(v.leaderId) ?? '') : '',
+        v.supportLevel ?? '',
+        (v.tags ?? []).join(', '),
+        v.notes ?? '',
+      ]);
+    }
+
+    const arrayBuffer = await wb.xlsx.writeBuffer();
+    return Buffer.from(arrayBuffer);
+  }
+
   async search(tenantId: string, query: string) {
     return this.votersRepo
       .createQueryBuilder('v')

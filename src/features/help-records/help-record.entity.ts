@@ -5,7 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { HelpCategory, HelpStatus } from '../../shared/enums/features';
+import { HelpStatus } from '../../shared/enums/features';
 
 @Entity('help_records')
 export class HelpRecord {
@@ -18,20 +18,29 @@ export class HelpRecord {
   @Column({ nullable: true })
   voterId: string;
 
-  @Column({ type: 'enum', enum: HelpCategory })
-  category: HelpCategory;
+  @Column({ nullable: true })
+  type: string;
+
+  @Column({ nullable: true })
+  category: string;
 
   @Column({ type: 'enum', enum: HelpStatus, default: HelpStatus.PENDING })
   status: HelpStatus;
 
-  @Column({ type: 'text' })
-  description: string;
+  @Column({ type: 'text', nullable: true })
+  observations: string;
 
   @Column({ type: 'text', nullable: true })
   resolution: string;
 
   @Column({ nullable: true })
   responsibleId: string;
+
+  @Column({ nullable: true })
+  leaderId: string;
+
+  @Column({ type: 'date', nullable: true })
+  date: string;
 
   @Column({ type: 'jsonb', default: [] })
   documents: string[];

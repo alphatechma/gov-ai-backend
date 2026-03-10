@@ -173,19 +173,20 @@ export class AiService {
           .groupBy('h.status')
           .getRawMany();
 
-        const categoryData = await this.helpRecordRepo
+        const typeData = await this.helpRecordRepo
           .createQueryBuilder('h')
-          .select('h.category', 'category')
+          .select('h.type', 'type')
           .addSelect('COUNT(*)', 'count')
           .where('h.tenantId = :tenantId', { tenantId })
-          .groupBy('h.category')
+          .andWhere('h.type IS NOT NULL')
+          .groupBy('h.type')
           .orderBy('count', 'DESC')
           .limit(5)
           .getRawMany();
 
         const statusText = statusData.map((s) => `${s.status}: ${s.count}`).join(', ');
-        const categoryText = categoryData.length > 0
-          ? `Top categorias: ${categoryData.map((c) => `${c.category} (${c.count})`).join(', ')}`
+        const categoryText = typeData.length > 0
+          ? `Top tipos: ${typeData.map((c) => `${c.type} (${c.count})`).join(', ')}`
           : '';
 
         sections.push(`ATENDIMENTOS: ${totalHelp} total. Status: ${statusText}. ${categoryText}`);

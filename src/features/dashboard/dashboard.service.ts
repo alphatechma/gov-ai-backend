@@ -358,9 +358,9 @@ export class DashboardService {
         [tenantId],
       );
 
-      const helpByCategory = await this.dataSource.query(
-        `SELECT category, COUNT(*) as count FROM "help_records"
-         WHERE "tenantId" = $1 GROUP BY category ORDER BY count DESC`,
+      const helpByType = await this.dataSource.query(
+        `SELECT type, COUNT(*) as count FROM "help_records"
+         WHERE "tenantId" = $1 AND type IS NOT NULL GROUP BY type ORDER BY count DESC`,
         [tenantId],
       );
 
@@ -368,8 +368,8 @@ export class DashboardService {
         byStatus: Object.fromEntries(
           helpByStatus.map((r: any) => [r.status, parseInt(r.count, 10)]),
         ),
-        byCategory: helpByCategory.map((c: any) => ({
-          name: c.category,
+        byCategory: helpByType.map((c: any) => ({
+          name: c.type,
           count: parseInt(c.count, 10),
         })),
       };

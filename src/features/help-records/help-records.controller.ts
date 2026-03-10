@@ -1,4 +1,6 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, Res, UseGuards, UseInterceptors, UploadedFile, ParseUUIDPipe } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { HelpRecordsService } from './help-records.service';
 import { CreateHelpRecordDto } from './dto/create-help-record.dto';
 import { UpdateHelpRecordDto } from './dto/update-help-record.dto';
@@ -11,6 +13,52 @@ import { RequiresModule } from '../../shared/decorators/requires-module.decorato
 @RequiresModule('help-records')
 export class HelpRecordsController {
   constructor(private service: HelpRecordsService) {}
+
+  @Get('types')
+  findAllTypes(@Req() req: any) { return this.service.findAllTypes(req.tenantId); }
+
+  @Post('types')
+  createType(@Req() req: any, @Body('name') name: string) { return this.service.createType(req.tenantId, name); }
+
+  @Delete('types/:typeId')
+  removeType(@Req() req: any, @Param('typeId', ParseUUIDPipe) typeId: string) { return this.service.removeType(req.tenantId, typeId); }
+
+  @Get('export')
+  async exportExcel(
+    @Req() req: any,
+    @Res() res: Response,
+    @Query('search') search?: string,
+    @Query('type') type?: string,
+    @Query('status') status?: string,
+    @Query('neighborhood') neighborhood?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    const buffer = await this.service.exportToExcel(req.tenantId, {
+      search, type, status, neighborhood, dateFrom, dateTo,
+    });
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="atendimentos.xlsx"',
+    });
+    res.send(buffer);
+  }
+
+  @Get('import/template')
+  async downloadTemplate(@Res() res: Response) {
+    const buffer = await this.service.generateTemplate();
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="modelo_atendimentos.xlsx"',
+    });
+    res.send(buffer);
+  }
+
+  @Post('import/upload')
+  @UseInterceptors(FileInterceptor('file'))
+  importUpload(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
+    return this.service.importFromExcel(req.tenantId, file.buffer);
+  }
 
   @Get()
   findAll(@Req() req: any) { return this.service.findAll(req.tenantId); }

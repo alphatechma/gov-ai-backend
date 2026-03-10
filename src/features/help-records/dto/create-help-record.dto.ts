@@ -1,10 +1,12 @@
-import { IsArray, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
-import { HelpCategory } from '../../../shared/enums/features';
+import { IsArray, IsDateString, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateHelpRecordDto {
   @IsUUID() @IsOptional() voterId?: string;
-  @IsEnum(HelpCategory) category: HelpCategory;
-  @IsString() @IsNotEmpty() description: string;
+  @IsString() @IsNotEmpty() type: string;
+  @IsString() @IsOptional() category?: string;
+  @IsString() @IsOptional() observations?: string;
   @IsUUID() @IsOptional() responsibleId?: string;
+  @IsUUID() @IsOptional() leaderId?: string;
+  @IsDateString() @IsOptional() date?: string;
   @IsArray() @IsOptional() documents?: string[];
 }

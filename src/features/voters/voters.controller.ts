@@ -74,6 +74,25 @@ export class VotersController {
     return this.votersService.getStatsBySupportLevel(req.tenantId);
   }
 
+  @Get('export')
+  async exportExcel(
+    @Req() req: any,
+    @Res() res: Response,
+    @Query('search') search?: string,
+    @Query('neighborhood') neighborhood?: string,
+    @Query('leaderId') leaderId?: string,
+    @Query('gender') gender?: string,
+  ) {
+    const buffer = await this.votersService.exportToExcel(req.tenantId, {
+      search, neighborhood, leaderId, gender,
+    });
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="eleitores.xlsx"',
+    });
+    res.send(buffer);
+  }
+
   @Get('import/template')
   async downloadTemplate(@Res() res: Response) {
     const buffer = await this.votersService.generateTemplate();
