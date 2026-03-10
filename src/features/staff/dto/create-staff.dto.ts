@@ -1,4 +1,4 @@
-import { IsDateString, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsNotEmpty, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
 
 export class CreateStaffDto {
   @IsString() @IsNotEmpty() name: string;
@@ -8,4 +8,6 @@ export class CreateStaffDto {
   @IsString() @IsOptional() email?: string;
   @IsNumber() @Min(0) @IsOptional() salary?: number;
   @IsDateString() @IsOptional() startDate?: string;
+  @IsBoolean() @IsOptional() createAccess?: boolean;
+  @IsString() @MinLength(6) @IsOptional() password?: string;
 }

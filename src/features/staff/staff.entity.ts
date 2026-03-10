@@ -35,6 +35,9 @@ export class StaffMember {
   @Column({ type: 'date', nullable: true })
   startDate: Date;
 
+  @Column({ nullable: true })
+  userId: string;
+
   @Column({ default: true })
   active: boolean;
 

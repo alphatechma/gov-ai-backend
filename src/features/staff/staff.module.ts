@@ -4,9 +4,10 @@ import { StaffService } from './staff.service';
 import { StaffController } from './staff.controller';
 import { StaffMember } from './staff.entity';
 import { TenantModule } from '../../core/modules/tenant-module.entity';
+import { UsersModule } from '../../core/users/users.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([StaffMember, TenantModule])],
+  imports: [TypeOrmModule.forFeature([StaffMember, TenantModule]), UsersModule],
   controllers: [StaffController],
   providers: [StaffService],
   exports: [StaffService],

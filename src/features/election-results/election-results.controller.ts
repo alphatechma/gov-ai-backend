@@ -129,6 +129,15 @@ export class ElectionResultsController {
     return this.proxy.analysis(id, 'comparison', { candidates });
   }
 
+  @Get('elections/:electionId/analysis/cross-election')
+  crossElection(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('compareElectionId') compareElectionId: string,
+    @Query('candidateName') candidateName: string,
+  ) {
+    return this.proxy.analysis(id, 'cross-election', { compareElectionId, candidateName });
+  }
+
   @Get('elections/:electionId/analysis/projections')
   projections(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidateName') candidateName: string) {
     return this.proxy.analysis(id, 'projections', { candidateName });
