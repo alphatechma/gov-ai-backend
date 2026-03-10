@@ -4,3 +4,4 @@ dist
 *.js.map
 *.d.ts
 !eslint.config.mjs
+whatsapp-sessions

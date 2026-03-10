@@ -34,6 +34,7 @@ import { ChatModule } from './features/chat/chat.module';
 import { AiModule } from './features/ai/ai.module';
 import { ReportsModule } from './features/reports/reports.module';
 import { DashboardModule } from './features/dashboard/dashboard.module';
+import { WhatsappModule } from './features/whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { DashboardModule } from './features/dashboard/dashboard.module';
     AiModule,
     ReportsModule,
     DashboardModule,
+    WhatsappModule,
   ],
 })
 export class AppModule implements OnModuleInit {
