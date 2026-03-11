@@ -13,6 +13,7 @@ import {
   UseInterceptors,
   UploadedFile,
   ParseUUIDPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
@@ -30,8 +31,39 @@ export class VotersController {
   constructor(private votersService: VotersService) {}
 
   @Get()
-  findAll(@Req() req: any) {
-    return this.votersService.findAll(req.tenantId);
+  findAll(
+    @Req() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('neighborhood') neighborhood?: string,
+    @Query('leaderId') leaderId?: string,
+    @Query('gender') gender?: string,
+  ) {
+    return this.votersService.findAllPaginated(req.tenantId, {
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      search,
+      neighborhood,
+      leaderId,
+      gender,
+    });
+  }
+
+  @Get('list-stats')
+  getListStats(
+    @Req() req: any,
+    @Query('search') search?: string,
+    @Query('neighborhood') neighborhood?: string,
+    @Query('leaderId') leaderId?: string,
+    @Query('gender') gender?: string,
+  ) {
+    return this.votersService.getListStats(req.tenantId, {
+      search,
+      neighborhood,
+      leaderId,
+      gender,
+    });
   }
 
   @Get('search')
@@ -106,7 +138,22 @@ export class VotersController {
   @Post('import/upload')
   @UseInterceptors(FileInterceptor('file'))
   importUpload(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('Arquivo nao recebido. Envie um .xlsx valido.');
+    }
     return this.votersService.importFromExcel(req.tenantId, file.buffer);
+  }
+
+  @Get('geocode-status')
+  getGeocodeStatus(@Req() req: any) {
+    return this.votersService.getGeocodeStatus(req.tenantId);
+  }
+
+  @Post('geocode-all')
+  geocodeAll(@Req() req: any) {
+    // Dispara em background e retorna imediatamente
+    this.votersService.geocodeAllVoters(req.tenantId).catch(() => {});
+    return { started: true, message: 'Geocoding iniciado em background' };
   }
 
   @Get(':id')

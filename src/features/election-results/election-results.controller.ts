@@ -37,13 +37,12 @@ export class ElectionResultsController {
   @UseInterceptors(FileInterceptor('file'))
   importUpload(
     @UploadedFile() file: Express.Multer.File,
-    @Body() body: { year: string; state: string; municipalityName: string; round?: string },
+    @Body() body: { year: string; state: string; municipalityName?: string },
   ) {
     return this.proxy.importUpload(file.buffer, file.originalname, {
       year: parseInt(body.year, 10),
       state: body.state,
-      municipalityName: body.municipalityName,
-      round: body.round ? parseInt(body.round, 10) : 1,
+      municipalityName: body.municipalityName || undefined,
     });
   }
 
@@ -102,6 +101,16 @@ export class ElectionResultsController {
   @Get('elections/:electionId/analysis/candidate-by-section')
   candidateBySection(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidateName') candidateName: string, @Query('zone') zone?: string) {
     return this.proxy.analysis(id, 'candidate-by-section', { candidateName, zone });
+  }
+
+  @Get('elections/:electionId/analysis/by-city')
+  byCity(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidateName') candidateName?: string) {
+    return this.proxy.analysis(id, 'by-city', { candidateName });
+  }
+
+  @Get('elections/:electionId/analysis/candidate-by-city')
+  candidateByCity(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidateName') candidateName: string) {
+    return this.proxy.analysis(id, 'candidate-by-city', { candidateName });
   }
 
   @Get('elections/:electionId/analysis/neighborhoods')

@@ -36,7 +36,13 @@ export class ElectionProxyService {
 
     const params: Record<string, string> = {};
     if (tenant.state) params.state = tenant.state;
-    if (isLocal && tenant.city) params.city = tenant.city;
+    if (isLocal && tenant.city) {
+      // Eleicoes municipais: filtra pela cidade do tenant
+      params.city = tenant.city;
+    } else if (!isLocal && tenant.state) {
+      // Eleicoes estaduais/federais: city = UF (estado inteiro)
+      params.city = tenant.state;
+    }
     if (cargo) params.cargo = cargo;
 
     const { data } = await this.client.get('/elections', { params });
@@ -59,14 +65,13 @@ export class ElectionProxyService {
 
   // ── Import ──
 
-  async importUpload(fileBuffer: Buffer, originalname: string, metadata: { year: number; state: string; municipalityName: string; round?: number }) {
+  async importUpload(fileBuffer: Buffer, originalname: string, metadata: { year: number; state: string; municipalityName?: string }) {
     const FormData = require('form-data');
     const form = new FormData();
     form.append('file', fileBuffer, { filename: originalname });
     form.append('year', String(metadata.year));
     form.append('state', metadata.state);
-    form.append('municipalityName', metadata.municipalityName);
-    if (metadata.round) form.append('round', String(metadata.round));
+    if (metadata.municipalityName) form.append('municipalityName', metadata.municipalityName);
 
     const { data } = await this.client.post(
       '/elections/import/upload',

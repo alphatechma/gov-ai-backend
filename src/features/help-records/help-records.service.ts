@@ -29,6 +29,148 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
     await this.typeRepo.delete({ id, tenantId });
   }
 
+  async findAllPaginated(
+    tenantId: string,
+    filters: {
+      page?: number; limit?: number; search?: string; type?: string;
+      status?: string; neighborhood?: string; dateFrom?: string; dateTo?: string;
+    },
+  ): Promise<{ data: any[]; total: number; page: number; limit: number }> {
+    const page = Math.max(1, filters.page || 1);
+    const limit = Math.min(200, Math.max(1, filters.limit || 50));
+    const offset = (page - 1) * limit;
+
+    const qb = this.repository
+      .createQueryBuilder('h')
+      .leftJoin('voters', 'v', 'v.id = h.voterId')
+      .addSelect('v.name', 'voterName')
+      .addSelect('v.neighborhood', 'voterNeighborhood')
+      .where('h.tenantId = :tenantId', { tenantId });
+
+    if (filters.search) {
+      qb.andWhere('(h.type ILIKE :q OR h.observations ILIKE :q)', { q: `%${filters.search}%` });
+    }
+    if (filters.type) {
+      qb.andWhere('h.type = :type', { type: filters.type });
+    }
+    if (filters.status) {
+      qb.andWhere('h.status = :status', { status: filters.status });
+    }
+    if (filters.neighborhood) {
+      qb.andWhere('v.neighborhood = :neighborhood', { neighborhood: filters.neighborhood });
+    }
+    if (filters.dateFrom) {
+      qb.andWhere('COALESCE(h.date, CAST(h.createdAt AS date)) >= :dateFrom', { dateFrom: filters.dateFrom });
+    }
+    if (filters.dateTo) {
+      qb.andWhere('COALESCE(h.date, CAST(h.createdAt AS date)) <= :dateTo', { dateTo: filters.dateTo });
+    }
+
+    qb.orderBy('h.createdAt', 'DESC');
+
+    // Get total count
+    const countQb = qb.clone();
+    const totalResult = await countQb.select('COUNT(*)', 'count').getRawOne();
+    const total = parseInt(totalResult?.count ?? '0', 10);
+
+    // Get paginated data with voter info
+    const rawData = await qb
+      .select([
+        'h.id AS id',
+        'h.tenantId AS "tenantId"',
+        'h.voterId AS "voterId"',
+        'h.type AS type',
+        'h.category AS category',
+        'h.status AS status',
+        'h.observations AS observations',
+        'h.resolution AS resolution',
+        'h.responsibleId AS "responsibleId"',
+        'h.leaderId AS "leaderId"',
+        'h.date AS date',
+        'h.documents AS documents',
+        'h.createdAt AS "createdAt"',
+        'h.updatedAt AS "updatedAt"',
+        'v.name AS "voterName"',
+        'v.neighborhood AS "voterNeighborhood"',
+      ])
+      .offset(offset)
+      .limit(limit)
+      .getRawMany();
+
+    return { data: rawData, total, page, limit };
+  }
+
+  async getListStats(
+    tenantId: string,
+    filters: {
+      search?: string; type?: string; status?: string;
+      neighborhood?: string; dateFrom?: string; dateTo?: string;
+    },
+  ): Promise<{
+    total: number; pending: number; inProgress: number;
+    completed: number; cancelled: number;
+    types: { name: string; count: number }[];
+    bairros: string[];
+  }> {
+    const baseQb = () => {
+      const qb = this.repository
+        .createQueryBuilder('h')
+        .leftJoin('voters', 'v', 'v.id = h.voterId')
+        .where('h.tenantId = :tenantId', { tenantId });
+
+      if (filters.search) {
+        qb.andWhere('(h.type ILIKE :q OR h.observations ILIKE :q)', { q: `%${filters.search}%` });
+      }
+      if (filters.type) {
+        qb.andWhere('h.type = :type', { type: filters.type });
+      }
+      if (filters.status) {
+        qb.andWhere('h.status = :status', { status: filters.status });
+      }
+      if (filters.neighborhood) {
+        qb.andWhere('v.neighborhood = :neighborhood', { neighborhood: filters.neighborhood });
+      }
+      if (filters.dateFrom) {
+        qb.andWhere('COALESCE(h.date, CAST(h.createdAt AS date)) >= :dateFrom', { dateFrom: filters.dateFrom });
+      }
+      if (filters.dateTo) {
+        qb.andWhere('COALESCE(h.date, CAST(h.createdAt AS date)) <= :dateTo', { dateTo: filters.dateTo });
+      }
+      return qb;
+    };
+
+    const [totalResult, pendingResult, inProgressResult, completedResult, cancelledResult, typesResult, bairrosResult] =
+      await Promise.all([
+        baseQb().select('COUNT(*)', 'count').getRawOne(),
+        baseQb().andWhere("h.status = 'PENDING'").select('COUNT(*)', 'count').getRawOne(),
+        baseQb().andWhere("h.status = 'IN_PROGRESS'").select('COUNT(*)', 'count').getRawOne(),
+        baseQb().andWhere("h.status = 'COMPLETED'").select('COUNT(*)', 'count').getRawOne(),
+        baseQb().andWhere("h.status = 'CANCELLED'").select('COUNT(*)', 'count').getRawOne(),
+        baseQb()
+          .select('h.type', 'name')
+          .addSelect('COUNT(*)', 'count')
+          .andWhere("h.type IS NOT NULL AND h.type != ''")
+          .groupBy('h.type')
+          .orderBy('count', 'DESC')
+          .getRawMany(),
+        baseQb()
+          .select('DISTINCT v.neighborhood', 'neighborhood')
+          .andWhere("v.neighborhood IS NOT NULL AND v.neighborhood != ''")
+          .orderBy('v.neighborhood', 'ASC')
+          .getRawMany(),
+      ]);
+
+    return {
+      total: parseInt(totalResult?.count ?? '0', 10),
+      pending: parseInt(pendingResult?.count ?? '0', 10),
+      inProgress: parseInt(inProgressResult?.count ?? '0', 10),
+      completed: parseInt(completedResult?.count ?? '0', 10),
+      cancelled: parseInt(cancelledResult?.count ?? '0', 10),
+      types: typesResult.map((r: any) => ({ name: r.name, count: parseInt(r.count, 10) })),
+      bairros: bairrosResult.map((r: any) => r.neighborhood),
+    };
+  }
+
   async importFromExcel(tenantId: string, buffer: Buffer) {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];

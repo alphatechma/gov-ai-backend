@@ -61,7 +61,48 @@ export class HelpRecordsController {
   }
 
   @Get()
-  findAll(@Req() req: any) { return this.service.findAll(req.tenantId); }
+  findAll(
+    @Req() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('type') type?: string,
+    @Query('status') status?: string,
+    @Query('neighborhood') neighborhood?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.service.findAllPaginated(req.tenantId, {
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      search,
+      type,
+      status,
+      neighborhood,
+      dateFrom,
+      dateTo,
+    });
+  }
+
+  @Get('list-stats')
+  getListStats(
+    @Req() req: any,
+    @Query('search') search?: string,
+    @Query('type') type?: string,
+    @Query('status') status?: string,
+    @Query('neighborhood') neighborhood?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.service.getListStats(req.tenantId, {
+      search,
+      type,
+      status,
+      neighborhood,
+      dateFrom,
+      dateTo,
+    });
+  }
 
   @Get(':id')
   findOne(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) { return this.service.findOne(req.tenantId, id); }

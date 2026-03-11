@@ -220,7 +220,8 @@ export class VotersService extends TenantAwareService<Voter> {
       }
 
       try {
-        await this.create(tenantId, mapped as any);
+        // Inserir sem geocoding (sera feito em background por grupo de bairro)
+        await super.create(tenantId, mapped as any);
         imported++;
       } catch {
         skipped++;
@@ -228,7 +229,106 @@ export class VotersService extends TenantAwareService<Voter> {
       }
     }
 
+    // Geocodificar em background por combinacao unica de bairro+cidade+estado
+    this.geocodeAllVoters(tenantId).catch((err) =>
+      this.logger.error(`Erro no geocoding em background: ${err}`),
+    );
+
     return { imported, skipped, total: rows.length, errors: errors.slice(0, 20) };
+  }
+
+  async getGeocodeStatus(tenantId: string) {
+    const [totalResult, pendingResult, groupsResult] = await Promise.all([
+      this.votersRepo
+        .createQueryBuilder('v')
+        .select('COUNT(*)', 'count')
+        .where('v.tenantId = :tenantId', { tenantId })
+        .getRawOne(),
+      this.votersRepo
+        .createQueryBuilder('v')
+        .select('COUNT(*)', 'count')
+        .where('v.tenantId = :tenantId', { tenantId })
+        .andWhere('v.latitude IS NULL')
+        .andWhere('(v.neighborhood IS NOT NULL OR v.city IS NOT NULL)')
+        .getRawOne(),
+      this.votersRepo
+        .createQueryBuilder('v')
+        .select('v.neighborhood', 'neighborhood')
+        .addSelect('v.city', 'city')
+        .addSelect('v.state', 'state')
+        .where('v.tenantId = :tenantId', { tenantId })
+        .andWhere('v.latitude IS NULL')
+        .andWhere('(v.neighborhood IS NOT NULL OR v.city IS NOT NULL)')
+        .groupBy('v.neighborhood')
+        .addGroupBy('v.city')
+        .addGroupBy('v.state')
+        .getRawMany(),
+    ]);
+
+    const total = parseInt(totalResult?.count ?? '0', 10);
+    const pending = parseInt(pendingResult?.count ?? '0', 10);
+    const groups = groupsResult.length;
+    // Estimativa: ~1.1s por grupo
+    const estimatedSeconds = Math.ceil(groups * 1.1);
+
+    return { total, pending, groups, estimatedSeconds };
+  }
+
+  /**
+   * Geocodifica eleitores sem coordenadas, agrupando por bairro+cidade+estado
+   * para minimizar chamadas ao Nominatim.
+   */
+  async geocodeAllVoters(tenantId: string) {
+    // Buscar combinacoes unicas de bairro+cidade+estado sem coordenadas
+    const groups = await this.votersRepo
+      .createQueryBuilder('v')
+      .select('v.neighborhood', 'neighborhood')
+      .addSelect('v.city', 'city')
+      .addSelect('v.state', 'state')
+      .where('v.tenantId = :tenantId', { tenantId })
+      .andWhere('v.latitude IS NULL')
+      .andWhere('(v.neighborhood IS NOT NULL OR v.city IS NOT NULL)')
+      .groupBy('v.neighborhood')
+      .addGroupBy('v.city')
+      .addGroupBy('v.state')
+      .getRawMany();
+
+    this.logger.log(`Geocoding em background: ${groups.length} combinacoes unicas para tenant ${tenantId}`);
+
+    let geocoded = 0;
+    for (const group of groups) {
+      const geo = await this.geocodingService.geocode({
+        neighborhood: group.neighborhood,
+        city: group.city,
+        state: group.state,
+      });
+
+      if (geo) {
+        // Atualizar todos os eleitores deste grupo de uma vez
+        const qb = this.votersRepo
+          .createQueryBuilder()
+          .update()
+          .set({ latitude: geo.latitude, longitude: geo.longitude })
+          .where('tenantId = :tenantId', { tenantId })
+          .andWhere('latitude IS NULL');
+
+        if (group.neighborhood) {
+          qb.andWhere('neighborhood = :neighborhood', { neighborhood: group.neighborhood });
+        } else {
+          qb.andWhere('neighborhood IS NULL');
+        }
+        if (group.city) {
+          qb.andWhere('city = :city', { city: group.city });
+        } else {
+          qb.andWhere('city IS NULL');
+        }
+
+        const result = await qb.execute();
+        geocoded += result.affected || 0;
+      }
+    }
+
+    this.logger.log(`Geocoding concluido: ${geocoded} eleitores atualizados com coordenadas`);
   }
 
   async generateTemplate(): Promise<Buffer> {
@@ -322,6 +422,104 @@ export class VotersService extends TenantAwareService<Voter> {
 
     const arrayBuffer = await wb.xlsx.writeBuffer();
     return Buffer.from(arrayBuffer);
+  }
+
+  async findAllPaginated(
+    tenantId: string,
+    filters: { page?: number; limit?: number; search?: string; neighborhood?: string; leaderId?: string; gender?: string },
+  ): Promise<{ data: Voter[]; total: number; page: number; limit: number }> {
+    const page = Math.max(1, filters.page || 1);
+    const limit = Math.min(200, Math.max(1, filters.limit || 50));
+    const offset = (page - 1) * limit;
+
+    const qb = this.votersRepo
+      .createQueryBuilder('v')
+      .where('v.tenantId = :tenantId', { tenantId });
+
+    if (filters.search) {
+      qb.andWhere('(v.name ILIKE :q OR v.phone ILIKE :q)', { q: `%${filters.search}%` });
+    }
+    if (filters.neighborhood) {
+      qb.andWhere('v.neighborhood = :neighborhood', { neighborhood: filters.neighborhood });
+    }
+    if (filters.leaderId) {
+      qb.andWhere('v.leaderId = :leaderId', { leaderId: filters.leaderId });
+    }
+    if (filters.gender) {
+      qb.andWhere('v.gender = :gender', { gender: filters.gender });
+    }
+
+    qb.orderBy('v.createdAt', 'DESC');
+
+    const [data, total] = await qb.skip(offset).take(limit).getManyAndCount();
+
+    return { data, total, page, limit };
+  }
+
+  async getListStats(
+    tenantId: string,
+    filters: { search?: string; neighborhood?: string; leaderId?: string; gender?: string },
+  ): Promise<{
+    total: number;
+    withPhone: number;
+    withNeighborhood: number;
+    bairros: string[];
+    genders: string[];
+    top5Bairros: { name: string; count: number }[];
+  }> {
+    const baseQb = () => {
+      const qb = this.votersRepo
+        .createQueryBuilder('v')
+        .where('v.tenantId = :tenantId', { tenantId });
+
+      if (filters.search) {
+        qb.andWhere('(v.name ILIKE :q OR v.phone ILIKE :q)', { q: `%${filters.search}%` });
+      }
+      if (filters.neighborhood) {
+        qb.andWhere('v.neighborhood = :neighborhood', { neighborhood: filters.neighborhood });
+      }
+      if (filters.leaderId) {
+        qb.andWhere('v.leaderId = :leaderId', { leaderId: filters.leaderId });
+      }
+      if (filters.gender) {
+        qb.andWhere('v.gender = :gender', { gender: filters.gender });
+      }
+      return qb;
+    };
+
+    const [totalResult, withPhoneResult, withNeighborhoodResult, bairrosResult, gendersResult, top5BairrosResult] =
+      await Promise.all([
+        baseQb().select('COUNT(*)', 'count').getRawOne(),
+        baseQb().andWhere("v.phone IS NOT NULL AND v.phone != ''").select('COUNT(*)', 'count').getRawOne(),
+        baseQb().andWhere("v.neighborhood IS NOT NULL AND v.neighborhood != ''").select('COUNT(*)', 'count').getRawOne(),
+        baseQb()
+          .select('DISTINCT v.neighborhood', 'neighborhood')
+          .andWhere("v.neighborhood IS NOT NULL AND v.neighborhood != ''")
+          .orderBy('v.neighborhood', 'ASC')
+          .getRawMany(),
+        baseQb()
+          .select('DISTINCT v.gender', 'gender')
+          .andWhere("v.gender IS NOT NULL AND v.gender != ''")
+          .orderBy('v.gender', 'ASC')
+          .getRawMany(),
+        baseQb()
+          .select('v.neighborhood', 'name')
+          .addSelect('COUNT(*)', 'count')
+          .andWhere("v.neighborhood IS NOT NULL AND v.neighborhood != ''")
+          .groupBy('v.neighborhood')
+          .orderBy('count', 'DESC')
+          .limit(5)
+          .getRawMany(),
+      ]);
+
+    return {
+      total: parseInt(totalResult?.count ?? '0', 10),
+      withPhone: parseInt(withPhoneResult?.count ?? '0', 10),
+      withNeighborhood: parseInt(withNeighborhoodResult?.count ?? '0', 10),
+      bairros: bairrosResult.map((r: any) => r.neighborhood),
+      genders: gendersResult.map((r: any) => r.gender),
+      top5Bairros: top5BairrosResult.map((r: any) => ({ name: r.name, count: parseInt(r.count, 10) })),
+    };
   }
 
   async search(tenantId: string, query: string) {
