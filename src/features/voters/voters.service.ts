@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DeepPartial } from 'typeorm';
 import { Voter } from './voter.entity';
+import { Leader } from '../leaders/leader.entity';
 import { TenantAwareService } from '../../shared/base/tenant-aware.service';
 import { GeocodingService } from '../../shared/services/geocoding.service';
 import * as XLSX from 'xlsx';
@@ -14,6 +15,8 @@ export class VotersService extends TenantAwareService<Voter> {
   constructor(
     @InjectRepository(Voter)
     private votersRepo: Repository<Voter>,
+    @InjectRepository(Leader)
+    private leadersRepo: Repository<Leader>,
     private geocodingService: GeocodingService,
   ) {
     super(votersRepo);
@@ -161,15 +164,46 @@ export class VotersService extends TenantAwareService<Voter> {
 
   async importFromExcel(tenantId: string, buffer: Buffer) {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    // Try to find a data sheet (skip summary sheets)
+    const dataSheetNames = ['Cadastro de Eleitores', 'Eleitores'];
+    let sheet = workbook.Sheets[dataSheetNames.find((n) => workbook.SheetNames.includes(n)) ?? ''];
+    if (!sheet) sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) throw new BadRequestException('Planilha vazia');
 
-    const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
+    let rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
     if (rows.length === 0) throw new BadRequestException('Nenhum registro encontrado na planilha');
+
+    // Detect report format: if any of the first rows have __EMPTY keys, it's a report
+    const isReport = rows.slice(0, 5).some((r) =>
+      Object.keys(r).some((k) => k.startsWith('__EMPTY')),
+    );
+    if (isReport) {
+      // Find the header row: the one with "Nome" or "Nome Completo" as a VALUE and multiple columns
+      const headerIdx = rows.findIndex((r) => {
+        const vals = Object.values(r).map((v) => String(v).toLowerCase().trim());
+        return vals.some((v) => v === 'nome' || v === 'nome completo') && Object.keys(r).length > 3;
+      });
+      if (headerIdx >= 0) {
+        const headerValues = Object.values(rows[headerIdx]).map((v) => String(v).trim());
+        const dataRows = rows.slice(headerIdx + 1);
+        rows = dataRows.map((r) => {
+          const obj: Record<string, any> = {};
+          const values = Object.values(r);
+          headerValues.forEach((h, i) => {
+            if (h && values[i] !== undefined && values[i] !== null && String(values[i]).trim() !== '') {
+              obj[h] = values[i];
+            }
+          });
+          return obj;
+        });
+      }
+    }
 
     const COLUMN_MAP: Record<string, string> = {
       nome: 'name',
+      'nome completo': 'name',
       telefone: 'phone',
+      whatsapp: 'phone',
       'data de nascimento': 'birthDate',
       'endereco': 'address',
       'endereço': 'address',
@@ -179,11 +213,28 @@ export class VotersService extends TenantAwareService<Voter> {
       cep: 'zipCode',
       titulo: 'voterRegistration',
       'titulo de eleitor': 'voterRegistration',
+      'lideranca': 'leaderName',
+      'liderança': 'leaderName',
+      'lideranca responsavel': 'leaderName',
+      'liderança responsável': 'leaderName',
+      articulador: 'leaderName',
     };
+
+    // Pre-load leaders for name matching + auto-create
+    const existingLeaders = await this.leadersRepo.find({
+      where: { tenantId },
+      select: ['id', 'name'],
+    });
+    const leaderByName = new Map<string, string>();
+    for (const l of existingLeaders) {
+      leaderByName.set(l.name.toLowerCase().trim(), l.id);
+    }
 
     let imported = 0;
     let skipped = 0;
     const errors: string[] = [];
+    const batch: Record<string, any>[] = [];
+    const BATCH_SIZE = 500;
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -198,7 +249,7 @@ export class VotersService extends TenantAwareService<Voter> {
 
       if (!mapped.name) {
         skipped++;
-        errors.push(`Linha ${i + 2}: nome obrigatorio`);
+        if (errors.length < 20) errors.push(`Linha ${i + 2}: nome obrigatorio`);
         continue;
       }
 
@@ -211,7 +262,6 @@ export class VotersService extends TenantAwareService<Voter> {
             mapped.birthDate = `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
           }
         } else {
-          // Try to parse DD/MM/YYYY
           const parts = mapped.birthDate.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
           if (parts) {
             mapped.birthDate = `${parts[3]}-${parts[2].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
@@ -219,13 +269,69 @@ export class VotersService extends TenantAwareService<Voter> {
         }
       }
 
+      // Resolve leader by name: match existing or create new
+      if (mapped.leaderName) {
+        const normalizedName = mapped.leaderName.toLowerCase().trim();
+        let leaderId = leaderByName.get(normalizedName);
+        if (!leaderId) {
+          const newLeader = this.leadersRepo.create({
+            tenantId,
+            name: mapped.leaderName,
+          });
+          const saved = await this.leadersRepo.save(newLeader);
+          leaderId = saved.id;
+          leaderByName.set(normalizedName, leaderId);
+        }
+        mapped.leaderId = leaderId;
+        delete mapped.leaderName;
+      }
+
+      mapped.tenantId = tenantId;
+      batch.push(mapped);
+
+      if (batch.length >= BATCH_SIZE) {
+        try {
+          await this.votersRepo
+            .createQueryBuilder()
+            .insert()
+            .values(batch)
+            .execute();
+          imported += batch.length;
+        } catch {
+          // Fallback: try one by one to identify bad rows
+          for (const item of batch) {
+            try {
+              await this.votersRepo.save(this.votersRepo.create(item as any));
+              imported++;
+            } catch {
+              skipped++;
+              if (errors.length < 20) errors.push(`Erro ao salvar "${item.name}"`);
+            }
+          }
+        }
+        batch.length = 0;
+      }
+    }
+
+    // Flush remaining batch
+    if (batch.length > 0) {
       try {
-        // Inserir sem geocoding (sera feito em background por grupo de bairro)
-        await super.create(tenantId, mapped as any);
-        imported++;
+        await this.votersRepo
+          .createQueryBuilder()
+          .insert()
+          .values(batch)
+          .execute();
+        imported += batch.length;
       } catch {
-        skipped++;
-        errors.push(`Linha ${i + 2}: erro ao salvar "${mapped.name}"`);
+        for (const item of batch) {
+          try {
+            await this.votersRepo.save(this.votersRepo.create(item as any));
+            imported++;
+          } catch {
+            skipped++;
+            if (errors.length < 20) errors.push(`Erro ao salvar "${item.name}"`);
+          }
+        }
       }
     }
 
@@ -335,8 +441,8 @@ export class VotersService extends TenantAwareService<Voter> {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Eleitores');
 
-    const headers = ['Nome', 'Telefone', 'Data de Nascimento', 'Endereco', 'Bairro', 'Cidade', 'Estado', 'CEP', 'Titulo'];
-    const widths = [30, 16, 18, 35, 20, 20, 8, 12, 16];
+    const headers = ['Nome', 'Telefone', 'Data de Nascimento', 'Endereco', 'Bairro', 'Cidade', 'Estado', 'CEP', 'Titulo', 'Lideranca'];
+    const widths = [30, 16, 18, 35, 20, 20, 8, 12, 16, 25];
 
     ws.columns = headers.map((header, i) => ({ header, width: widths[i] }));
 

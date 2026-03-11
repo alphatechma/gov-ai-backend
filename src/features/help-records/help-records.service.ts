@@ -172,27 +172,60 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
 
   async importFromExcel(tenantId: string, buffer: Buffer) {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    // Try to find the Atendimentos sheet
+    const dataSheetNames = ['Atendimentos', 'Atendimento'];
+    let sheet = workbook.Sheets[dataSheetNames.find((n) => workbook.SheetNames.includes(n)) ?? ''];
+    if (!sheet) sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) throw new BadRequestException('Planilha vazia');
 
-    const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
+    let rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
     if (rows.length === 0) throw new BadRequestException('Nenhum registro encontrado na planilha');
+
+    // Detect report format: if any of the first rows have __EMPTY keys, it's a report
+    const isReport = rows.slice(0, 5).some((r) =>
+      Object.keys(r).some((k) => k.startsWith('__EMPTY')),
+    );
+    if (isReport) {
+      // Find the header row: one with "Tipo" or "Tipo de Suporte" as a VALUE and multiple columns
+      const headerIdx = rows.findIndex((r) => {
+        const vals = Object.values(r).map((v) => String(v).toLowerCase().trim());
+        return vals.some((v) => /^(tipo|tipo de suporte|tipo de atendimento)$/.test(v)) && Object.keys(r).length > 3;
+      });
+      if (headerIdx >= 0) {
+        const headerValues = Object.values(rows[headerIdx]).map((v) => String(v).trim());
+        const dataRows = rows.slice(headerIdx + 1);
+        rows = dataRows.map((r) => {
+          const obj: Record<string, any> = {};
+          const values = Object.values(r);
+          headerValues.forEach((h, i) => {
+            if (h && values[i] !== undefined && values[i] !== null && String(values[i]).trim() !== '') {
+              obj[h] = values[i];
+            }
+          });
+          return obj;
+        });
+      }
+    }
 
     const COLUMN_MAP: Record<string, string> = {
       'tipo': 'type',
       'tipo de atendimento': 'type',
+      'tipo de suporte': 'type',
       'categoria': 'category',
       'data': 'date',
       'data do atendimento': 'date',
       'observacoes': 'observations',
       'observações': 'observations',
+      'observação': 'observations',
       'status': 'status',
       'eleitor': 'voterName',
       'nome do eleitor': 'voterName',
+      'nome da pessoa': 'voterName',
       'lideranca': 'leaderName',
       'liderança': 'leaderName',
       'lideranca responsavel': 'leaderName',
       'liderança responsável': 'leaderName',
+      'articulador': 'leaderName',
     };
 
     const STATUS_MAP: Record<string, string> = {
@@ -221,10 +254,13 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
     // Pre-load existing help types to auto-create new ones
     const existingTypes = await this.typeRepo.find({ where: { tenantId } });
     const typeSet = new Set(existingTypes.map((t) => t.name.toLowerCase()));
+    const newTypesToCreate: string[] = [];
 
     let imported = 0;
     let skipped = 0;
     const errors: string[] = [];
+    const batch: Record<string, any>[] = [];
+    const BATCH_SIZE = 500;
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -239,7 +275,7 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
 
       if (!mapped.type) {
         skipped++;
-        errors.push(`Linha ${i + 2}: tipo de atendimento obrigatorio`);
+        if (errors.length < 20) errors.push(`Linha ${i + 2}: tipo de atendimento obrigatorio`);
         continue;
       }
 
@@ -272,26 +308,82 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
         delete mapped.voterName;
       }
 
-      // Match leader by name
+      // Match leader by name or auto-create
       if (mapped.leaderName) {
-        const leaderId = leaderByName.get(mapped.leaderName.toLowerCase());
-        if (leaderId) mapped.leaderId = leaderId;
+        const normalizedName = mapped.leaderName.toLowerCase().trim();
+        let leaderId = leaderByName.get(normalizedName);
+        if (!leaderId) {
+          const result = await this.repository.manager.query(
+            `INSERT INTO leaders ("tenantId", "name") VALUES ($1, $2) RETURNING id`,
+            [tenantId, mapped.leaderName],
+          );
+          leaderId = result[0].id as string;
+          leaderByName.set(normalizedName, leaderId);
+        }
+        mapped.leaderId = leaderId;
         delete mapped.leaderName;
       }
 
-      // Auto-create help type if new
+      // Collect new help types for batch creation
       if (!typeSet.has(mapped.type.toLowerCase())) {
-        await this.createType(tenantId, mapped.type);
+        newTypesToCreate.push(mapped.type);
         typeSet.add(mapped.type.toLowerCase());
       }
 
-      try {
-        await this.create(tenantId, mapped as any);
-        imported++;
-      } catch {
-        skipped++;
-        errors.push(`Linha ${i + 2}: erro ao salvar atendimento "${mapped.type}"`);
+      mapped.tenantId = tenantId;
+      batch.push(mapped);
+
+      if (batch.length >= BATCH_SIZE) {
+        try {
+          await this.repository
+            .createQueryBuilder()
+            .insert()
+            .values(batch)
+            .execute();
+          imported += batch.length;
+        } catch {
+          for (const item of batch) {
+            try {
+              await this.repository.save(this.repository.create(item as any));
+              imported++;
+            } catch {
+              skipped++;
+              if (errors.length < 20) errors.push(`Erro ao salvar atendimento "${item.type}"`);
+            }
+          }
+        }
+        batch.length = 0;
       }
+    }
+
+    // Flush remaining batch
+    if (batch.length > 0) {
+      try {
+        await this.repository
+          .createQueryBuilder()
+          .insert()
+          .values(batch)
+          .execute();
+        imported += batch.length;
+      } catch {
+        for (const item of batch) {
+          try {
+            await this.repository.save(this.repository.create(item as any));
+            imported++;
+          } catch {
+            skipped++;
+            if (errors.length < 20) errors.push(`Erro ao salvar atendimento "${item.type}"`);
+          }
+        }
+      }
+    }
+
+    // Batch create new help types
+    if (newTypesToCreate.length > 0) {
+      const typeEntities = newTypesToCreate.map((name) =>
+        this.typeRepo.create({ tenantId, name }),
+      );
+      await this.typeRepo.save(typeEntities);
     }
 
     return { imported, skipped, total: rows.length, errors: errors.slice(0, 20) };

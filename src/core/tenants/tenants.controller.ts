@@ -50,4 +50,17 @@ export class TenantsController {
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.tenantsService.remove(id);
   }
+
+  @Get(':id/module-data-counts')
+  getModuleDataCounts(@Param('id', ParseUUIDPipe) id: string) {
+    return this.tenantsService.getModuleDataCounts(id);
+  }
+
+  @Delete(':id/modules/:moduleKey/data')
+  deleteModuleData(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('moduleKey') moduleKey: string,
+  ) {
+    return this.tenantsService.deleteModuleData(id, moduleKey);
+  }
 }
