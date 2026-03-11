@@ -42,10 +42,10 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
 
     const qb = this.repository
       .createQueryBuilder('h')
-      .leftJoin('voters', 'v', 'v.id = h.voterId')
+      .leftJoin('voters', 'v', 'v.id = h."voterId"::uuid')
       .addSelect('v.name', 'voterName')
       .addSelect('v.neighborhood', 'voterNeighborhood')
-      .where('h.tenantId = :tenantId', { tenantId });
+      .where('h."tenantId" = :tenantId', { tenantId });
 
     if (filters.search) {
       qb.andWhere('(h.type ILIKE :q OR h.observations ILIKE :q)', { q: `%${filters.search}%` });
@@ -60,36 +60,35 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
       qb.andWhere('v.neighborhood = :neighborhood', { neighborhood: filters.neighborhood });
     }
     if (filters.dateFrom) {
-      qb.andWhere('COALESCE(h.date, CAST(h.createdAt AS date)) >= :dateFrom', { dateFrom: filters.dateFrom });
+      qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) >= :dateFrom', { dateFrom: filters.dateFrom });
     }
     if (filters.dateTo) {
-      qb.andWhere('COALESCE(h.date, CAST(h.createdAt AS date)) <= :dateTo', { dateTo: filters.dateTo });
+      qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) <= :dateTo', { dateTo: filters.dateTo });
     }
 
-    qb.orderBy('h.createdAt', 'DESC');
-
-    // Get total count
+    // Get total count (before adding orderBy to avoid GROUP BY conflict)
     const countQb = qb.clone();
     const totalResult = await countQb.select('COUNT(*)', 'count').getRawOne();
     const total = parseInt(totalResult?.count ?? '0', 10);
 
     // Get paginated data with voter info
+    qb.orderBy('h."createdAt"', 'DESC');
     const rawData = await qb
       .select([
         'h.id AS id',
-        'h.tenantId AS "tenantId"',
-        'h.voterId AS "voterId"',
+        'h."tenantId" AS "tenantId"',
+        'h."voterId" AS "voterId"',
         'h.type AS type',
         'h.category AS category',
         'h.status AS status',
         'h.observations AS observations',
         'h.resolution AS resolution',
-        'h.responsibleId AS "responsibleId"',
-        'h.leaderId AS "leaderId"',
+        'h."responsibleId" AS "responsibleId"',
+        'h."leaderId" AS "leaderId"',
         'h.date AS date',
         'h.documents AS documents',
-        'h.createdAt AS "createdAt"',
-        'h.updatedAt AS "updatedAt"',
+        'h."createdAt" AS "createdAt"',
+        'h."updatedAt" AS "updatedAt"',
         'v.name AS "voterName"',
         'v.neighborhood AS "voterNeighborhood"',
       ])
@@ -115,8 +114,8 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
     const baseQb = () => {
       const qb = this.repository
         .createQueryBuilder('h')
-        .leftJoin('voters', 'v', 'v.id = h.voterId')
-        .where('h.tenantId = :tenantId', { tenantId });
+        .leftJoin('voters', 'v', 'v.id = h."voterId"::uuid')
+        .where('h."tenantId" = :tenantId', { tenantId });
 
       if (filters.search) {
         qb.andWhere('(h.type ILIKE :q OR h.observations ILIKE :q)', { q: `%${filters.search}%` });
@@ -131,10 +130,10 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
         qb.andWhere('v.neighborhood = :neighborhood', { neighborhood: filters.neighborhood });
       }
       if (filters.dateFrom) {
-        qb.andWhere('COALESCE(h.date, CAST(h.createdAt AS date)) >= :dateFrom', { dateFrom: filters.dateFrom });
+        qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) >= :dateFrom', { dateFrom: filters.dateFrom });
       }
       if (filters.dateTo) {
-        qb.andWhere('COALESCE(h.date, CAST(h.createdAt AS date)) <= :dateTo', { dateTo: filters.dateTo });
+        qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) <= :dateTo', { dateTo: filters.dateTo });
       }
       return qb;
     };
@@ -317,10 +316,10 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
       qb.andWhere('h.status = :status', { status: filters.status });
     }
     if (filters.dateFrom) {
-      qb.andWhere('COALESCE(h.date, CAST(h.createdAt AS date)) >= :dateFrom', { dateFrom: filters.dateFrom });
+      qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) >= :dateFrom', { dateFrom: filters.dateFrom });
     }
     if (filters.dateTo) {
-      qb.andWhere('COALESCE(h.date, CAST(h.createdAt AS date)) <= :dateTo', { dateTo: filters.dateTo });
+      qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) <= :dateTo', { dateTo: filters.dateTo });
     }
 
     let records = await qb.getMany();
