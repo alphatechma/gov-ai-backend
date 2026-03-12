@@ -7,7 +7,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { WhatsappBaileysService } from './whatsapp-baileys.service';
+import { WhatsappEvolutionService } from './whatsapp-evolution.service';
 
 interface AuthenticatedSocket extends Socket {
   userId: string;
@@ -25,22 +25,22 @@ export class WhatsappGateway implements OnGatewayConnection, OnGatewayDisconnect
   constructor(
     private jwtService: JwtService,
     private configService: ConfigService,
-    private baileys: WhatsappBaileysService,
+    private evolution: WhatsappEvolutionService,
   ) {
-    // Forward baileys events to WebSocket clients
-    this.baileys.on('qr', ({ tenantId, qrCode }) => {
+    // Forward evolution events to WebSocket clients
+    this.evolution.on('qr', ({ tenantId, qrCode }) => {
       this.server?.to(`tenant:${tenantId}`).emit('whatsapp:qr', { qrCode });
     });
 
-    this.baileys.on('connected', ({ tenantId, phoneNumber, pushName }) => {
+    this.evolution.on('connected', ({ tenantId, phoneNumber, pushName }) => {
       this.server?.to(`tenant:${tenantId}`).emit('whatsapp:connected', { phoneNumber, pushName });
     });
 
-    this.baileys.on('disconnected', ({ tenantId, loggedOut }) => {
+    this.evolution.on('disconnected', ({ tenantId, loggedOut }) => {
       this.server?.to(`tenant:${tenantId}`).emit('whatsapp:disconnected', { loggedOut });
     });
 
-    this.baileys.on('message', ({ tenantId, message }) => {
+    this.evolution.on('message', ({ tenantId, message }) => {
       this.server?.to(`tenant:${tenantId}`).emit('whatsapp:message', message);
     });
   }

@@ -5,7 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { WhatsappConnection } from './entities/whatsapp-connection.entity';
 import { WhatsappMessage } from './entities/whatsapp-message.entity';
 import { TenantModule as TenantModuleEntity } from '../../core/modules/tenant-module.entity';
-import { WhatsappBaileysService } from './whatsapp-baileys.service';
+import { WhatsappEvolutionService } from './whatsapp-evolution.service';
 import { WhatsappService } from './whatsapp.service';
 import { WhatsappController } from './whatsapp.controller';
 import { WhatsappGateway } from './whatsapp.gateway';
@@ -20,16 +20,16 @@ import { WhatsappGateway } from './whatsapp.gateway';
         secret: config.get('JWT_SECRET'),
       }),
     }),
+    ConfigModule,
   ],
   controllers: [WhatsappController],
-  providers: [WhatsappBaileysService, WhatsappService, WhatsappGateway],
+  providers: [WhatsappEvolutionService, WhatsappService, WhatsappGateway],
   exports: [WhatsappService],
 })
 export class WhatsappModule implements OnModuleInit {
-  constructor(private baileys: WhatsappBaileysService) {}
+  constructor(private evolution: WhatsappEvolutionService) {}
 
   async onModuleInit() {
-    // Restore active connections on startup
-    await this.baileys.restoreConnections();
+    await this.evolution.restoreConnections();
   }
 }

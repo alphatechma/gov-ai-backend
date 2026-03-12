@@ -3,10 +3,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import makeWASocket, {
   useMultiFileAuthState,
+  makeCacheableSignalKeyStore,
   DisconnectReason,
   fetchLatestBaileysVersion,
   WASocket,
 } from 'baileys';
+import { Boom } from '@hapi/boom';
+import pino from 'pino';
 import * as QRCode from 'qrcode';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -24,8 +27,11 @@ interface TenantSocket {
   qrCode: string | null;
   status: ConnectionStatus;
   retryCount: number;
-  lidToPhone: Map<string, string>; // LID JID → phone JID mapping
+  reconnecting: boolean;
+  lidToPhone: Map<string, string>;
 }
+
+const baileysLogger = pino({ level: 'silent' });
 
 @Injectable()
 export class WhatsappBaileysService extends EventEmitter implements OnModuleDestroy {
@@ -73,10 +79,10 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
   // ── Connect / create socket ──
 
   async connect(tenantId: string, connectionId: string): Promise<string | null> {
-    if (this.sockets.has(tenantId)) {
-      const existing = this.sockets.get(tenantId)!;
+    const existing = this.sockets.get(tenantId);
+    if (existing) {
       if (existing.status === ConnectionStatus.CONNECTED) return null;
-      // Close stale socket
+      if (existing.reconnecting) return null; // Prevent race condition during reconnect
       existing.socket.end(undefined);
       this.sockets.delete(tenantId);
     }
@@ -85,9 +91,14 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
     const { version } = await fetchLatestBaileysVersion();
 
+    // FIX 1: Use makeCacheableSignalKeyStore for better performance and reliability
     const socket = makeWASocket({
       version,
-      auth: state,
+      logger: baileysLogger,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
+      },
       printQRInTerminal: false,
       browser: ['GoverneAI', 'Chrome', '22.0'],
       generateHighQualityLinkPreview: false,
@@ -104,205 +115,225 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
       qrCode: null,
       status: ConnectionStatus.PENDING,
       retryCount: 0,
+      reconnecting: false,
       lidToPhone: new Map(),
     };
     this.sockets.set(tenantId, tenantSocket);
 
-    // ── QR Code ──
-    socket.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect, qr } = update;
+    // FIX 6: Use ev.process() for batch event processing
+    socket.ev.process(async (events) => {
+      // ── Connection updates ──
+      if (events['connection.update']) {
+        const { connection, lastDisconnect, qr } = events['connection.update'];
 
-      if (qr) {
-        tenantSocket.qrCode = await QRCode.toDataURL(qr);
-        tenantSocket.status = ConnectionStatus.PENDING;
-        tenantSocket.retryCount = 0;
-        this.emit('qr', { tenantId, qrCode: tenantSocket.qrCode });
-        this.logger.log(`QR code generated for tenant ${tenantId}`);
-      }
+        if (qr) {
+          tenantSocket.qrCode = await QRCode.toDataURL(qr);
+          tenantSocket.status = ConnectionStatus.PENDING;
+          this.emit('qr', { tenantId, qrCode: tenantSocket.qrCode });
+          this.logger.log(`QR code generated for tenant ${tenantId}`);
+        }
 
-      if (connection === 'open') {
-        tenantSocket.qrCode = null;
-        tenantSocket.status = ConnectionStatus.CONNECTED;
-        tenantSocket.retryCount = 0;
+        if (connection === 'open') {
+          tenantSocket.qrCode = null;
+          tenantSocket.status = ConnectionStatus.CONNECTED;
+          tenantSocket.retryCount = 0;
+          tenantSocket.reconnecting = false;
 
-        const phoneNumber = socket.user?.id?.split(':')[0] || undefined;
-        const pushName = socket.user?.name || undefined;
+          const phoneNumber = socket.user?.id?.split(':')[0] || undefined;
+          const pushName = socket.user?.name || undefined;
 
-        await this.connectionRepo.update(connectionId, {
-          status: ConnectionStatus.CONNECTED,
-          phoneNumber,
-          pushName,
-        });
-
-        this.emit('connected', { tenantId, phoneNumber, pushName });
-        this.logger.log(`WhatsApp connected for tenant ${tenantId} (${phoneNumber})`);
-      }
-
-      if (connection === 'close') {
-        const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
-        const isRestartRequired = statusCode === DisconnectReason.restartRequired;
-
-        tenantSocket.status = ConnectionStatus.DISCONNECTED;
-        tenantSocket.retryCount++;
-
-        // Only reconnect if: explicitly restart required, OR was previously connected and code is known
-        const wasConnected = tenantSocket.retryCount <= 1 && statusCode !== undefined;
-        const shouldReconnect = (isRestartRequired || wasConnected) && !isLoggedOut && tenantSocket.retryCount <= 5;
-
-        if (shouldReconnect) {
-          this.logger.warn(`Reconnecting WhatsApp for tenant ${tenantId} (code: ${statusCode}, attempt: ${tenantSocket.retryCount})`);
-          this.sockets.delete(tenantId);
-          setTimeout(() => this.connect(tenantId, connectionId), 5000);
-        } else {
-          this.logger.warn(`WhatsApp disconnected for tenant ${tenantId} (code: ${statusCode}, loggedOut: ${isLoggedOut})`);
           await this.connectionRepo.update(connectionId, {
-            status: ConnectionStatus.DISCONNECTED,
+            status: ConnectionStatus.CONNECTED,
+            phoneNumber,
+            pushName,
           });
-          if (isLoggedOut && fs.existsSync(sessionPath)) {
-            fs.rmSync(sessionPath, { recursive: true, force: true });
-          }
-          this.sockets.delete(tenantId);
-          this.emit('disconnected', { tenantId, loggedOut: isLoggedOut });
-        }
-      }
-    });
 
-    // ── Save credentials ──
-    socket.ev.on('creds.update', saveCreds);
-
-    // ── Build LID → Phone mapping from contacts ──
-    socket.ev.on('contacts.upsert', (contacts) => {
-      for (const contact of contacts) {
-        const id = contact.id; // e.g. "5598999657740@s.whatsapp.net"
-        const lid = (contact as any).lid; // e.g. "124343950544964@lid"
-        if (lid && id) {
-          tenantSocket.lidToPhone.set(lid, id);
-          this.logger.log(`[LID MAP] ${lid} → ${id} (${(contact as any).name || (contact as any).notify || 'unknown'})`);
-        }
-      }
-      this.logger.log(`[LID MAP] Total mappings: ${tenantSocket.lidToPhone.size}`);
-    });
-
-    socket.ev.on('contacts.update', (updates) => {
-      for (const update of updates) {
-        const id = update.id;
-        const lid = (update as any).lid;
-        if (lid && id && id.endsWith('@s.whatsapp.net')) {
-          tenantSocket.lidToPhone.set(lid, id);
-        } else if (lid && id && id.endsWith('@lid')) {
-          // id is the LID, check if there's a phone reference
-        }
-      }
-    });
-
-    // ── Incoming messages ──
-    socket.ev.on('messages.upsert', async ({ messages, type }) => {
-      this.logger.warn(`[UPSERT] type=${type}, count=${messages.length}`);
-
-      if (type !== 'notify') {
-        this.logger.warn(`[UPSERT] Skipping: type is "${type}", not "notify"`);
-        return;
-      }
-
-      for (const msg of messages) {
-        const msgKeys = msg.message ? Object.keys(msg.message) : ['NO_MESSAGE'];
-        this.logger.warn(`[UPSERT] Message: fromMe=${msg.key.fromMe}, jid=${msg.key.remoteJid}, keys=[${msgKeys.join(', ')}]`);
-
-        if (!msg.message) {
-          this.logger.warn(`[UPSERT] Skipping: no msg.message`);
-          continue;
-        }
-        if (msg.key.fromMe) {
-          this.logger.warn(`[UPSERT] Skipping: fromMe=true`);
-          continue;
+          this.emit('connected', { tenantId, phoneNumber, pushName });
+          this.logger.log(`WhatsApp connected for tenant ${tenantId} (${phoneNumber})`);
         }
 
-        const remoteJid = msg.key.remoteJid || '';
-        const isPersonalChat = remoteJid.endsWith('@s.whatsapp.net') || remoteJid.endsWith('@lid');
-        if (!isPersonalChat) {
-          this.logger.warn(`[UPSERT] Skipping: JID "${remoteJid}" is not a personal chat`);
-          continue;
-        }
+        if (connection === 'close') {
+          const error = lastDisconnect?.error as Boom;
+          const statusCode = error?.output?.statusCode;
+          const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
-        // For @lid JIDs, try to resolve to the real phone JID
-        let resolvedJid = remoteJid;
-        if (remoteJid.endsWith('@lid')) {
-          const phoneJid = tenantSocket.lidToPhone.get(remoteJid);
-          if (phoneJid) {
-            resolvedJid = phoneJid;
-            this.logger.warn(`[UPSERT] Resolved LID ${remoteJid} → ${resolvedJid} (from map)`);
+          tenantSocket.status = ConnectionStatus.DISCONNECTED;
+          tenantSocket.retryCount++;
+
+          // FIX 2: Simplified reconnection logic matching Baileys docs
+          // Reconnect for any reason EXCEPT explicit logout, with a max retry limit
+          const shouldReconnect = !isLoggedOut && tenantSocket.retryCount <= 10;
+
+          if (shouldReconnect) {
+            // FIX 5: Use reconnecting flag to prevent race conditions
+            tenantSocket.reconnecting = true;
+            const delay = Math.min(tenantSocket.retryCount * 2000, 20000); // Exponential backoff, max 20s
+            this.logger.warn(
+              `Reconnecting WhatsApp for tenant ${tenantId} (code: ${statusCode}, attempt: ${tenantSocket.retryCount}, delay: ${delay}ms)`,
+            );
+            setTimeout(async () => {
+              // Only reconnect if this tenant socket is still the current one
+              const current = this.sockets.get(tenantId);
+              if (current === tenantSocket) {
+                this.sockets.delete(tenantId);
+                try {
+                  await this.connect(tenantId, connectionId);
+                } catch (err) {
+                  this.logger.error(`Reconnection failed for ${tenantId}: ${err.message}`);
+                }
+              }
+            }, delay);
           } else {
-            // LID not in map yet — keep as LID, will still be saved and displayed
-            this.logger.warn(`[UPSERT] LID ${remoteJid} not resolved yet (map size: ${tenantSocket.lidToPhone.size}), saving with LID`);
+            this.logger.warn(
+              `WhatsApp disconnected for tenant ${tenantId} (code: ${statusCode}, loggedOut: ${isLoggedOut})`,
+            );
+            await this.connectionRepo.update(connectionId, {
+              status: ConnectionStatus.DISCONNECTED,
+            });
+            if (isLoggedOut && fs.existsSync(sessionPath)) {
+              fs.rmSync(sessionPath, { recursive: true, force: true });
+            }
+            this.sockets.delete(tenantId);
+            this.emit('disconnected', { tenantId, loggedOut: isLoggedOut });
           }
         }
+      }
 
-        const remotePhone = resolvedJid.split('@')[0];
+      // ── Save credentials ──
+      if (events['creds.update']) {
+        await saveCreds();
+      }
 
-        // Unwrap nested message containers (ephemeral, viewOnce, edited, etc.)
-        const innerMessage = this.extractInnerMessage(msg.message);
+      // ── Build LID → Phone mapping from contacts ──
+      if (events['contacts.upsert']) {
+        for (const contact of events['contacts.upsert']) {
+          const id = contact.id;
+          const lid = (contact as any).lid;
+          if (lid && id && id.endsWith('@s.whatsapp.net')) {
+            tenantSocket.lidToPhone.set(lid, id);
+          }
+        }
+        this.logger.log(`[LID MAP] Total mappings: ${tenantSocket.lidToPhone.size}`);
+      }
 
-        const content =
-          innerMessage.conversation ||
-          innerMessage.extendedTextMessage?.text ||
-          innerMessage.imageMessage?.caption ||
-          innerMessage.videoMessage?.caption ||
-          innerMessage.documentMessage?.caption ||
-          (innerMessage.imageMessage ? '[imagem]' : '') ||
-          (innerMessage.videoMessage ? '[video]' : '') ||
-          (innerMessage.audioMessage || innerMessage.pttMessage ? '[audio]' : '') ||
-          (innerMessage.stickerMessage ? '[sticker]' : '') ||
-          (innerMessage.documentMessage ? '[documento]' : '') ||
-          (innerMessage.locationMessage ? '[localizacao]' : '') ||
-          (innerMessage.contactMessage || innerMessage.contactsArrayMessage ? '[contato]' : '') ||
-          '[midia]';
-        const remoteName = msg.pushName || undefined;
-
-        this.logger.log(`Incoming message from ${remotePhone} (${remoteName || 'unknown'}): type=${this.getMessageType(innerMessage)}, content="${content.substring(0, 50)}"`);
-
-        try {
-          const entity = this.messageRepo.create({
-            tenantId,
-            connectionId,
-            remoteJid: resolvedJid,
-            remoteName,
-            remotePhone,
-            content,
-            type: this.getMessageType(innerMessage),
-            direction: MessageDirection.INBOUND,
-            status: MessageStatus.DELIVERED,
-            externalId: msg.key.id || undefined,
-          });
-          const saved = await this.messageRepo.save(entity);
-
-          this.logger.log(`Incoming message saved with id=${saved.id}`);
-          this.emit('message', { tenantId, message: saved });
-        } catch (err) {
-          this.logger.error(`Failed to save incoming message: ${err.message}`);
+      if (events['contacts.update']) {
+        for (const update of events['contacts.update']) {
+          const id = update.id;
+          const lid = (update as any).lid;
+          if (lid && id && id.endsWith('@s.whatsapp.net')) {
+            tenantSocket.lidToPhone.set(lid, id);
+          }
         }
       }
-    });
 
-    // ── Message status updates ──
-    socket.ev.on('messages.update', async (updates) => {
-      for (const update of updates) {
-        if (!update.key?.id) continue;
-        const newStatus = update.update?.status;
-        if (!newStatus) continue;
+      // ── Incoming messages ──
+      if (events['messages.upsert']) {
+        const { messages, type } = events['messages.upsert'];
 
-        const statusMap: Record<number, MessageStatus> = {
-          2: MessageStatus.SENT,
-          3: MessageStatus.DELIVERED,
-          4: MessageStatus.READ,
-        };
+        if (type !== 'notify') return;
 
-        const mapped = statusMap[newStatus];
-        if (mapped) {
-          await this.messageRepo.update(
-            { externalId: update.key.id, tenantId },
-            { status: mapped },
+        for (const msg of messages) {
+          if (!msg.message) continue;
+
+          if (msg.key.fromMe) {
+            // Capture LID mappings from own message echoes
+            const ownJid = msg.key.remoteJid || '';
+            if (ownJid.endsWith('@lid')) {
+              const externalId = msg.key.id;
+              if (externalId) {
+                try {
+                  const outbound = await this.messageRepo.findOne({
+                    where: { tenantId, externalId },
+                    select: ['remoteJid', 'remotePhone'],
+                  });
+                  if (outbound && outbound.remoteJid.endsWith('@s.whatsapp.net')) {
+                    tenantSocket.lidToPhone.set(ownJid, outbound.remoteJid);
+                    this.logger.log(`[LID MAP] Captured from own msg echo: ${ownJid} → ${outbound.remoteJid}`);
+                  }
+                } catch { /* ignore */ }
+              }
+            }
+            continue;
+          }
+
+          const remoteJid = msg.key.remoteJid || '';
+          const isPersonalChat = remoteJid.endsWith('@s.whatsapp.net') || remoteJid.endsWith('@lid');
+          if (!isPersonalChat) continue;
+
+          // For @lid JIDs, try to resolve to the real phone JID
+          let resolvedJid = remoteJid;
+          if (remoteJid.endsWith('@lid')) {
+            resolvedJid = await this.resolveLidJid(tenantId, tenantSocket, remoteJid, msg);
+          }
+
+          const remotePhone = resolvedJid.split('@')[0];
+
+          // Unwrap nested message containers (ephemeral, viewOnce, edited, etc.)
+          const innerMessage = this.extractInnerMessage(msg.message);
+
+          const content =
+            innerMessage.conversation ||
+            innerMessage.extendedTextMessage?.text ||
+            innerMessage.imageMessage?.caption ||
+            innerMessage.videoMessage?.caption ||
+            innerMessage.documentMessage?.caption ||
+            (innerMessage.imageMessage ? '[imagem]' : '') ||
+            (innerMessage.videoMessage ? '[video]' : '') ||
+            (innerMessage.audioMessage || innerMessage.pttMessage ? '[audio]' : '') ||
+            (innerMessage.stickerMessage ? '[sticker]' : '') ||
+            (innerMessage.documentMessage ? '[documento]' : '') ||
+            (innerMessage.locationMessage ? '[localizacao]' : '') ||
+            (innerMessage.contactMessage || innerMessage.contactsArrayMessage ? '[contato]' : '') ||
+            '[midia]';
+          const remoteName = msg.pushName || undefined;
+
+          this.logger.log(
+            `Incoming message from ${remotePhone} (${remoteName || 'unknown'}): type=${this.getMessageType(innerMessage)}, content="${content.substring(0, 50)}"`,
           );
+
+          try {
+            const entity = this.messageRepo.create({
+              tenantId,
+              connectionId,
+              remoteJid: resolvedJid,
+              remoteName,
+              remotePhone,
+              content,
+              type: this.getMessageType(innerMessage),
+              direction: MessageDirection.INBOUND,
+              status: MessageStatus.DELIVERED,
+              externalId: msg.key.id || undefined,
+            });
+            const saved = await this.messageRepo.save(entity);
+
+            this.logger.log(`Incoming message saved with id=${saved.id}`);
+            this.emit('message', { tenantId, message: saved });
+          } catch (err) {
+            this.logger.error(`Failed to save incoming message: ${err.message}`);
+          }
+        }
+      }
+
+      // ── Message status updates ──
+      if (events['messages.update']) {
+        for (const update of events['messages.update']) {
+          if (!update.key?.id) continue;
+          const newStatus = update.update?.status;
+          if (!newStatus) continue;
+
+          const statusMap: Record<number, MessageStatus> = {
+            2: MessageStatus.SENT,
+            3: MessageStatus.DELIVERED,
+            4: MessageStatus.READ,
+          };
+
+          const mapped = statusMap[newStatus];
+          if (mapped) {
+            await this.messageRepo.update(
+              { externalId: update.key.id, tenantId },
+              { status: mapped },
+            );
+          }
         }
       }
     });
@@ -323,7 +354,6 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
     let jid: string;
 
     if (isLid) {
-      // LID contact — send directly using LID JID
       jid = `${clean}@lid`;
       this.logger.log(`Sending to LID contact: ${jid}`);
     } else {
@@ -331,7 +361,6 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
       jid = `${normalizedPhone}@s.whatsapp.net`;
 
       // Verify the number exists on WhatsApp and get correct JID
-      // (handles Brazil 9th digit issue - some numbers are 12 or 13 digits)
       try {
         const results = await ts.socket.onWhatsApp(jid);
         const result = results?.[0];
@@ -361,11 +390,31 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
 
       this.logger.log(`Message sent to ${jid}, externalId: ${sent?.key?.id}`);
 
+      // If the sent key contains a different remoteJid (e.g. LID), save the mapping
+      if (sent?.key?.remoteJid && sent.key.remoteJid !== jid) {
+        const sentJid = sent.key.remoteJid;
+        if (sentJid.endsWith('@lid')) {
+          ts.lidToPhone.set(sentJid, jid);
+          this.logger.log(`[LID MAP] Captured from sendMessage: ${sentJid} → ${jid}`);
+        } else if (jid.endsWith('@lid') && sentJid.endsWith('@s.whatsapp.net')) {
+          ts.lidToPhone.set(jid, sentJid);
+          this.logger.log(`[LID MAP] Captured from sendMessage: ${jid} → ${sentJid}`);
+        }
+      }
+
+      // Look up existing remoteName for this contact
+      const existingMsg = await this.messageRepo.findOne({
+        where: { tenantId, remotePhone },
+        select: ['remoteName'],
+        order: { createdAt: 'DESC' },
+      });
+
       const entity = this.messageRepo.create({
         tenantId,
         connectionId: ts.connectionId,
         remoteJid: jid,
         remotePhone,
+        remoteName: existingMsg?.remoteName || undefined,
         content,
         type: 'text',
         direction: MessageDirection.OUTBOUND,
@@ -411,8 +460,17 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
     const ts = this.sockets.get(tenantId);
     if (!ts) return;
 
-    await ts.socket.logout();
-    ts.socket.end(undefined);
+    // FIX 4: Wrap logout in try/catch to ensure cleanup always runs
+    try {
+      await ts.socket.logout();
+    } catch (err) {
+      this.logger.warn(`Logout failed for tenant ${tenantId}: ${err.message}`);
+    }
+
+    try {
+      ts.socket.end(undefined);
+    } catch { /* ignore */ }
+
     this.sockets.delete(tenantId);
 
     // Clean session
@@ -444,46 +502,110 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
     return this.sockets.get(tenantId)?.status === ConnectionStatus.CONNECTED;
   }
 
+  /** Resolve a LID JID to a phone JID using the runtime mapping */
+  resolveLid(tenantId: string, lidJid: string): string | null {
+    const ts = this.sockets.get(tenantId);
+    if (!ts) return null;
+    return ts.lidToPhone.get(lidJid) || null;
+  }
+
   // ── Helpers ──
 
   /** Normalize any phone input to full international digits (e.g. 5511999998888) */
   normalizePhone(phone: string): string {
     const clean = phone.replace(/\D/g, '');
-    // Already has country code 55 + area code + number (13 digits)
     if (clean.length === 13 && clean.startsWith('55')) return clean;
-    // Local with area code (11 digits): add 55
     if (clean.length === 11) return `55${clean}`;
-    // 12 digits starting with 55 (old format without 9th digit)
     if (clean.length === 12 && clean.startsWith('55')) return clean;
-    // 10 digits (landline or old mobile without 9): add 55
     if (clean.length === 10) return `55${clean}`;
-    // Already international or unknown format — return as-is
     return clean;
   }
 
-  private phoneToJid(phone: string): string {
-    return `${this.normalizePhone(phone)}@s.whatsapp.net`;
+  /**
+   * Resolve a LID JID to its phone JID using multiple strategies.
+   * Returns the phone JID if found, or the original LID JID if not.
+   */
+  private async resolveLidJid(
+    tenantId: string,
+    ts: TenantSocket,
+    lidJid: string,
+    msg: any,
+  ): Promise<string> {
+    // Strategy 1: In-memory LID map (built from contacts.upsert and sendMessage echoes)
+    const fromMap = ts.lidToPhone.get(lidJid);
+    if (fromMap) {
+      this.logger.log(`[LID] Resolved from map: ${lidJid} → ${fromMap}`);
+      return fromMap;
+    }
+
+    this.logger.warn(`[LID] ${lidJid} not in map (size: ${ts.lidToPhone.size}), trying other strategies...`);
+
+    // Strategy 2: msg.key.participant (sometimes has phone JID in group-like contexts)
+    const participant = msg.key?.participant;
+    if (participant && participant.endsWith('@s.whatsapp.net')) {
+      ts.lidToPhone.set(lidJid, participant);
+      this.logger.log(`[LID] Resolved via participant: ${lidJid} → ${participant}`);
+      return participant;
+    }
+
+    // Strategy 3: Already-resolved LID messages in DB (from a previous resolution)
+    try {
+      const prevResolved = await this.messageRepo.findOne({
+        where: { tenantId, remoteJid: lidJid },
+        select: ['remotePhone'],
+      });
+      if (prevResolved && prevResolved.remotePhone.length <= 13) {
+        const phoneJid = `${prevResolved.remotePhone}@s.whatsapp.net`;
+        ts.lidToPhone.set(lidJid, phoneJid);
+        this.logger.log(`[LID] Resolved from DB (prev msg): ${lidJid} → ${phoneJid}`);
+        return phoneJid;
+      }
+    } catch (err) {
+      this.logger.warn(`[LID] DB lookup failed: ${err.message}`);
+    }
+
+    // Strategy 4: If the message is a reply (has contextInfo.stanzaId), find the original outbound
+    try {
+      const innerMsg = this.extractInnerMessage(msg.message);
+      const quotedId = innerMsg?.extendedTextMessage?.contextInfo?.stanzaId
+        || innerMsg?.contextInfo?.stanzaId;
+      if (quotedId) {
+        const quotedMsg = await this.messageRepo.findOne({
+          where: { tenantId, externalId: quotedId },
+          select: ['remoteJid', 'remotePhone'],
+        });
+        if (quotedMsg && quotedMsg.remoteJid.endsWith('@s.whatsapp.net')) {
+          ts.lidToPhone.set(lidJid, quotedMsg.remoteJid);
+          this.logger.log(`[LID] Resolved via quoted msg: ${lidJid} → ${quotedMsg.remoteJid}`);
+          return quotedMsg.remoteJid;
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`[LID] Quoted msg lookup failed: ${err.message}`);
+    }
+
+    // FIX 7: Removed Strategy 5 (guessing from recent unanswered outbound) — too unreliable
+    // with multiple concurrent conversations, can map LIDs to the wrong contacts
+
+    this.logger.warn(`[LID] Could not resolve ${lidJid}, saving as-is`);
+    return lidJid;
   }
 
   /** Unwrap nested message containers (ephemeral, viewOnce, edited, etc.) */
   private extractInnerMessage(message: any): any {
     if (!message) return {};
-    // Ephemeral (disappearing messages)
     if (message.ephemeralMessage?.message) {
       return this.extractInnerMessage(message.ephemeralMessage.message);
     }
-    // View once
     if (message.viewOnceMessage?.message) {
       return this.extractInnerMessage(message.viewOnceMessage.message);
     }
     if (message.viewOnceMessageV2?.message) {
       return this.extractInnerMessage(message.viewOnceMessageV2.message);
     }
-    // Edited message
     if (message.editedMessage?.message) {
       return this.extractInnerMessage(message.editedMessage.message);
     }
-    // Document with caption
     if (message.documentWithCaptionMessage?.message) {
       return this.extractInnerMessage(message.documentWithCaptionMessage.message);
     }

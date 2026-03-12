@@ -33,8 +33,11 @@ export class WhatsappConnection {
   })
   status: ConnectionStatus;
 
-  @Column({ type: 'jsonb', nullable: true })
-  sessionData: any;
+  @Column({ nullable: true })
+  instanceName: string;
+
+  @Column({ nullable: true })
+  instanceToken: string;
 
   @Column({ nullable: true })
   connectedBy: string;

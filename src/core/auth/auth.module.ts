@@ -6,6 +6,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { User } from '../users/user.entity';
 import { TenantModule } from '../modules/tenant-module.entity';
 
@@ -25,7 +26,7 @@ import { TenantModule } from '../modules/tenant-module.entity';
     TypeOrmModule.forFeature([User, TenantModule]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
-  exports: [AuthService, JwtStrategy, PassportModule],
+  providers: [AuthService, JwtStrategy, JwtRefreshStrategy],
+  exports: [AuthService, JwtStrategy, JwtRefreshStrategy, PassportModule],
 })
 export class AuthModule {}

@@ -21,6 +21,7 @@ export enum MessageStatus {
 
 @Entity('whatsapp_messages')
 @Index(['tenantId', 'remoteJid'])
+@Index(['tenantId', 'remotePhone'])
 @Index(['tenantId', 'createdAt'])
 export class WhatsappMessage {
   @PrimaryGeneratedColumn('uuid')
