@@ -608,16 +608,18 @@ export class WhatsappEvolutionService
       'POST',
       `/webhook/set/${instanceName}`,
       {
-        url: webhookUrl,
-        webhook_by_events: false,
-        webhook_base64: false,
-        enabled: true,
-        events: [
-          'QRCODE_UPDATED',
-          'CONNECTION_UPDATE',
-          'MESSAGES_UPSERT',
-          'MESSAGES_UPDATE',
-        ],
+        webhook: {
+          url: webhookUrl,
+          webhook_by_events: false,
+          webhook_base64: false,
+          enabled: true,
+          events: [
+            'QRCODE_UPDATED',
+            'CONNECTION_UPDATE',
+            'MESSAGES_UPSERT',
+            'MESSAGES_UPDATE',
+          ],
+        },
       },
       instanceToken,
     );
@@ -640,23 +642,25 @@ export class WhatsappEvolutionService
         this.globalApiKey,
       );
 
-      // Response can be an array or an object with instances array
+      // Response is an array of instance objects
       const instances = Array.isArray(result)
         ? result
         : result?.instances || [];
 
       const instance = instances.find(
         (i: any) =>
+          i?.name === instanceName ||
           i?.instance?.instanceName === instanceName ||
           i?.instanceName === instanceName,
       );
 
       if (!instance) return null;
 
+      // Evolution API v2 returns token at root level
       const token =
+        instance?.token ||
         instance?.instance?.apikey ||
         instance?.apikey ||
-        instance?.token ||
         '';
 
       return token ? { token } : null;
