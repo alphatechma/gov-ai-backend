@@ -87,13 +87,18 @@ export class WhatsappService {
   // ── Webhook ──
 
   async handleWebhook(tenantId: string, body: any) {
-    const event = body.event;
+    const rawEvent = body.event;
     const data = body.data;
 
-    if (!event) {
-      this.logger.warn(`Webhook without event for tenant ${tenantId}`);
+    if (!rawEvent) {
+      this.logger.warn(`Webhook without event for tenant ${tenantId}. Keys: ${Object.keys(body).join(', ')}`);
       return;
     }
+
+    // Normalize event name: Evolution v2 may send "messages.upsert" or "MESSAGES_UPSERT"
+    const event = rawEvent.toUpperCase().replace(/\./g, '_');
+
+    this.logger.log(`Webhook received: raw="${rawEvent}" normalized="${event}" tenant=${tenantId}`);
 
     await this.evolution.handleWebhook(tenantId, event, data);
   }

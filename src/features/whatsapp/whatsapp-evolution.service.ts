@@ -426,7 +426,8 @@ export class WhatsappEvolutionService
   }
 
   private async handleConnectionUpdate(tenantId: string, data: any) {
-    const state = data?.state || data?.status;
+    const state = data?.state || data?.status || data?.instance?.state;
+    this.logger.log(`[CONNECTION_UPDATE] state="${state}" data keys: ${data ? Object.keys(data).join(',') : 'null'}`);
     const inst = this.instances.get(tenantId);
     if (!inst) return;
 
@@ -483,12 +484,30 @@ export class WhatsappEvolutionService
   }
 
   private async handleMessagesUpsert(tenantId: string, data: any) {
-    // Evolution API sends data as array or single object
-    const messages = Array.isArray(data) ? data : [data];
+    this.logger.log(
+      `[MESSAGES_UPSERT] raw data type=${typeof data}, isArray=${Array.isArray(data)}, keys=${data ? Object.keys(data).join(',') : 'null'}`,
+    );
+
+    // Evolution API v2 sends data in various formats:
+    // - Single message object with key/message at root
+    // - Array of message objects
+    // - Object with a nested "messages" array (Baileys-style)
+    let messages: any[];
+    if (Array.isArray(data)) {
+      messages = data;
+    } else if (data?.key) {
+      // Single message object directly
+      messages = [data];
+    } else {
+      messages = [data];
+    }
 
     for (const msg of messages) {
       const key = msg.key;
-      if (!key) continue;
+      if (!key) {
+        this.logger.warn(`[MESSAGES_UPSERT] message without key, skipping. Keys: ${msg ? Object.keys(msg).join(',') : 'null'}`);
+        continue;
+      }
 
       // Skip outbound messages (we already saved them when sending)
       if (key.fromMe) continue;
