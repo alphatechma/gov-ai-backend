@@ -178,7 +178,15 @@ export class WhatsappEvolutionService
 
     // Create new instance in Evolution API
     const result = await this.createInstance(instanceName);
-    const newToken = result.hash?.apikey || result.token || '';
+    this.logger.log(
+      `Instance created: ${JSON.stringify({ hash: result.hash, instance: result.instance, token: result.token })}`,
+    );
+    // Evolution API v2: hash is a plain string (the instance token), not an object
+    const newToken =
+      (typeof result.hash === 'string' ? result.hash : result.hash?.apikey) ||
+      result.token ||
+      result.instance?.token ||
+      '';
 
     // Configure webhook for this instance
     await this.configureWebhook(instanceName, newToken, tenantId);
