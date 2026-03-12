@@ -342,14 +342,52 @@ export class WhatsappEvolutionService
 
   // ── Status ──
 
-  getStatus(tenantId: string) {
+  async getStatus(
+    tenantId: string,
+  ): Promise<{ status: ConnectionStatus | 'DISCONNECTED'; qrCode: string | null }> {
     const inst = this.instances.get(tenantId);
-    if (!inst) return { status: 'DISCONNECTED' as const, qrCode: null };
-    return { status: inst.status, qrCode: inst.qrCode };
+    if (inst) return { status: inst.status, qrCode: inst.qrCode };
+
+    // Cache miss — check DB + Evolution API to rebuild cache
+    const conn = await this.connectionRepo.findOne({ where: { tenantId } });
+    if (!conn?.instanceName || !conn?.instanceToken) {
+      return { status: 'DISCONNECTED', qrCode: null };
+    }
+
+    try {
+      const state = await this.fetchConnectionState(
+        conn.instanceName,
+        conn.instanceToken,
+      );
+      const status =
+        state === 'open'
+          ? ConnectionStatus.CONNECTED
+          : state === 'connecting'
+            ? ConnectionStatus.PENDING
+            : ConnectionStatus.DISCONNECTED;
+
+      // Rebuild cache
+      this.instances.set(tenantId, {
+        instanceName: conn.instanceName,
+        instanceToken: conn.instanceToken,
+        status,
+        qrCode: null,
+      });
+
+      // Sync DB if status changed
+      if (conn.status !== status) {
+        await this.connectionRepo.update(conn.id, { status });
+      }
+
+      return { status, qrCode: null };
+    } catch {
+      return { status: 'DISCONNECTED', qrCode: null };
+    }
   }
 
-  isConnected(tenantId: string): boolean {
-    return this.instances.get(tenantId)?.status === ConnectionStatus.CONNECTED;
+  async isConnected(tenantId: string): Promise<boolean> {
+    const { status } = await this.getStatus(tenantId);
+    return status === ConnectionStatus.CONNECTED;
   }
 
   // ── Webhook Handlers ──

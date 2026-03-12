@@ -23,7 +23,7 @@ export class WhatsappService {
     const conn = await this.connectionRepo.findOne({ where: { tenantId } });
     if (!conn) return null;
 
-    const live = this.evolution.getStatus(tenantId);
+    const live = await this.evolution.getStatus(tenantId);
     return {
       ...conn,
       liveStatus: live.status,
@@ -52,7 +52,7 @@ export class WhatsappService {
 
     await this.evolution.connect(tenantId, conn.id);
 
-    const live = this.evolution.getStatus(tenantId);
+    const live = await this.evolution.getStatus(tenantId);
     return {
       connectionId: conn.id,
       status: live.status,
@@ -68,14 +68,14 @@ export class WhatsappService {
   // ── Messaging ──
 
   async sendMessage(tenantId: string, phone: string, content: string, quotedId?: string) {
-    if (!this.evolution.isConnected(tenantId)) {
+    if (!(await this.evolution.isConnected(tenantId))) {
       throw new BadRequestException('WhatsApp não está conectado. Conecte primeiro.');
     }
     return this.evolution.sendMessage(tenantId, phone, content, quotedId);
   }
 
   async broadcast(tenantId: string, phones: string[], content: string) {
-    if (!this.evolution.isConnected(tenantId)) {
+    if (!(await this.evolution.isConnected(tenantId))) {
       throw new BadRequestException('WhatsApp não está conectado.');
     }
     if (phones.length > 100) {
