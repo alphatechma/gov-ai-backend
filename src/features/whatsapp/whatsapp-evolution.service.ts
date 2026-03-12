@@ -516,7 +516,8 @@ export class WhatsappEvolutionService
       // Skip group messages
       if (remoteJid.includes('@g.us')) continue;
 
-      const remotePhone = remoteJid.split('@')[0];
+      const rawPhone = remoteJid.split('@')[0];
+      const remotePhone = this.normalizePhone(rawPhone);
       const pushName = msg.pushName || undefined;
 
       const message = msg.message || {};
@@ -540,10 +541,11 @@ export class WhatsappEvolutionService
       const conn = await this.connectionRepo.findOne({ where: { tenantId } });
 
       try {
+        const normalizedJid = `${remotePhone}@s.whatsapp.net`;
         const entity = this.messageRepo.create({
           tenantId,
           connectionId: conn?.id || '',
-          remoteJid,
+          remoteJid: normalizedJid,
           remoteName: pushName,
           remotePhone,
           content,
@@ -761,12 +763,43 @@ export class WhatsappEvolutionService
 
   // ── Helpers ──
 
+  /**
+   * Normalize any phone to 55 + DDD(2) + 9 + number(8) = 13 digits for mobile.
+   * Handles the Brazilian 9th digit inconsistency where WhatsApp JIDs may
+   * arrive as 5511XXXX8888 (12 digits, missing the 9) instead of 55119XXXX8888 (13 digits).
+   */
   normalizePhone(phone: string): string {
     const clean = phone.replace(/\D/g, '');
+
+    // Already correct: 55 + DDD(2) + 9XXXXXXXX(9) = 13 digits
     if (clean.length === 13 && clean.startsWith('55')) return clean;
+
+    // 55 + DDD(2) + XXXXXXXX(8) = 12 digits — missing 9th digit (mobile)
+    // Add 9 after DDD for mobile numbers (DDD >= 11)
+    if (clean.length === 12 && clean.startsWith('55')) {
+      const ddd = clean.slice(2, 4);
+      const number = clean.slice(4);
+      // Brazilian mobile DDDs are 11-99; landlines start with 2-5
+      // If number starts with [6-9], it's mobile and needs the 9 prefix
+      if (number[0] >= '6') {
+        return `55${ddd}9${number}`;
+      }
+      return clean; // Landline, keep as-is (12 digits)
+    }
+
+    // DDD(2) + 9XXXXXXXX(9) = 11 digits — missing country code
     if (clean.length === 11) return `55${clean}`;
-    if (clean.length === 12 && clean.startsWith('55')) return clean;
-    if (clean.length === 10) return `55${clean}`;
+
+    // DDD(2) + XXXXXXXX(8) = 10 digits — missing country code + maybe 9th digit
+    if (clean.length === 10) {
+      const ddd = clean.slice(0, 2);
+      const number = clean.slice(2);
+      if (number[0] >= '6') {
+        return `55${ddd}9${number}`;
+      }
+      return `55${clean}`;
+    }
+
     return clean;
   }
 
