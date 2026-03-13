@@ -35,8 +35,9 @@ export class UsersController {
 
   @Get(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN)
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.usersService.findOne(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: any) {
+    const tenantId = user.role === UserRole.SUPER_ADMIN ? undefined : user.tenantId;
+    return this.usersService.findOne(id, tenantId);
   }
 
   @Post()
@@ -50,13 +51,19 @@ export class UsersController {
 
   @Patch(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN)
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserDto) {
-    return this.usersService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateUserDto,
+    @CurrentUser() user: any,
+  ) {
+    const tenantId = user.role === UserRole.SUPER_ADMIN ? undefined : user.tenantId;
+    return this.usersService.update(id, dto, tenantId);
   }
 
   @Delete(':id')
   @Roles(UserRole.SUPER_ADMIN)
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.usersService.remove(id);
+  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: any) {
+    const tenantId = user.role === UserRole.SUPER_ADMIN ? undefined : user.tenantId;
+    return this.usersService.remove(id, tenantId);
   }
 }

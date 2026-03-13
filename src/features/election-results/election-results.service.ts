@@ -1039,19 +1039,40 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
   }
 
   private async insertBatch(rows: any[]) {
-    const escapeSql = (str: string) => (str ? str.replace(/'/g, "''") : '');
-    const values = rows
-      .map(
-        (r) =>
-          `('${r.tenantId}', ${r.electionYear}, ${r.round}, '${escapeSql(r.candidateName)}', ${r.candidateNumber ? `'${escapeSql(r.candidateNumber)}'` : 'NULL'}, ${r.candidateParty ? `'${escapeSql(r.candidateParty)}'` : 'NULL'}, ${r.isTenantCandidate}, ${r.zone ? `'${escapeSql(r.zone)}'` : 'NULL'}, ${r.section ? `'${escapeSql(r.section)}'` : 'NULL'}, ${r.city ? `'${escapeSql(r.city)}'` : 'NULL'}, ${r.state ? `'${escapeSql(r.state)}'` : 'NULL'}, NULL, ${r.candidateVotes}, ${r.totalVotes}, ${r.party ? `'${escapeSql(r.party)}'` : 'NULL'})`,
-      )
-      .join(',\n');
+    if (rows.length === 0) return;
 
-    await this.dataSource.query(`
-      INSERT INTO election_results
+    const params: any[] = [];
+    const placeholders: string[] = [];
+    let p = 1;
+
+    for (const r of rows) {
+      placeholders.push(
+        `($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},NULL,$${p++},$${p++},$${p++})`,
+      );
+      params.push(
+        r.tenantId,
+        r.electionYear,
+        r.round,
+        r.candidateName,
+        r.candidateNumber || null,
+        r.candidateParty || null,
+        r.isTenantCandidate,
+        r.zone || null,
+        r.section || null,
+        r.city || null,
+        r.state || null,
+        r.candidateVotes,
+        r.totalVotes,
+        r.party || null,
+      );
+    }
+
+    await this.dataSource.query(
+      `INSERT INTO election_results
       ("tenantId", "electionYear", "round", "candidateName", "candidateNumber", "candidateParty", "isTenantCandidate", "zone", "section", "city", "state", "neighborhood", "candidateVotes", "totalVotes", "party")
-      VALUES ${values}
-    `);
+      VALUES ${placeholders.join(',')}`,
+      params,
+    );
   }
 
   private async recalcTotalVotes(tenantId: string) {

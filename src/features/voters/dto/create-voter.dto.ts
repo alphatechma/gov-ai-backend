@@ -8,7 +8,7 @@ import {
   IsDateString,
   IsUUID,
 } from 'class-validator';
-import { SupportLevel } from '../../../shared/enums/features';
+import { SupportLevel, ConfidenceLevel } from '../../../shared/enums/features';
 
 export class CreateVoterDto {
   @IsString()
@@ -32,6 +32,7 @@ export class CreateVoterDto {
   @IsString() @IsOptional() votingSection?: string;
   @IsUUID() @IsOptional() leaderId?: string;
   @IsEnum(SupportLevel) @IsOptional() supportLevel?: SupportLevel;
+  @IsEnum(ConfidenceLevel) @IsOptional() confidenceLevel?: ConfidenceLevel;
   @IsArray() @IsOptional() tags?: string[];
   @IsString() @IsOptional() notes?: string;
 }

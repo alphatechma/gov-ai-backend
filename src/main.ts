@@ -11,8 +11,13 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
 
+  const corsOrigins = configService.get<string>('CORS_ORIGINS', '');
   app.enableCors({
-    origin: true,
+    origin: corsOrigins
+      ? corsOrigins.split(',').map((o) => o.trim())
+      : configService.get<string>('NODE_ENV') === 'production'
+        ? false
+        : true,
     credentials: true,
   });
 
@@ -29,15 +34,17 @@ async function bootstrap() {
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new TenantInterceptor());
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('GoverneAI API')
-    .setDescription('API da plataforma GoverneAI')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
+  if (configService.get<string>('NODE_ENV') !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('GoverneAI API')
+      .setDescription('API da plataforma GoverneAI')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document);
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   const port = configService.get<number>('PORT', 3750);
   await app.listen(port);

@@ -5,6 +5,12 @@ export enum SupportLevel {
   OPOSICAO = 'OPOSICAO',
 }
 
+export enum ConfidenceLevel {
+  ALTO = 'ALTO',
+  NEUTRO = 'NEUTRO',
+  BAIXO = 'BAIXO',
+}
+
 export enum HelpCategory {
   SAUDE = 'SAUDE',
   EDUCACAO = 'EDUCACAO',

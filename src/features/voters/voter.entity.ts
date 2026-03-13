@@ -8,7 +8,7 @@ import {
   JoinColumn,
   OneToMany,
 } from 'typeorm';
-import { SupportLevel } from '../../shared/enums/features';
+import { SupportLevel, ConfidenceLevel } from '../../shared/enums/features';
 
 @Entity('voters')
 export class Voter {
@@ -75,6 +75,13 @@ export class Voter {
     default: SupportLevel.INDEFINIDO,
   })
   supportLevel: SupportLevel;
+
+  @Column({
+    type: 'enum',
+    enum: ConfidenceLevel,
+    default: ConfidenceLevel.NEUTRO,
+  })
+  confidenceLevel: ConfidenceLevel;
 
   @Column({ type: 'jsonb', default: [] })
   tags: string[];

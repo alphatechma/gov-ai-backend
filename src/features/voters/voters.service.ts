@@ -40,7 +40,11 @@ export class VotersService extends TenantAwareService<Voter> {
         }
       }
     }
-    return super.create(tenantId, dto);
+    const voter = await super.create(tenantId, dto);
+    if (voter.leaderId) {
+      await this.syncLeaderVotersCount(voter.leaderId);
+    }
+    return voter;
   }
 
   async update(tenantId: string, id: string, dto: DeepPartial<Voter>) {
@@ -79,7 +83,41 @@ export class VotersService extends TenantAwareService<Voter> {
         }
       }
     }
-    return super.update(tenantId, id, dto);
+    // Capturar leaderId antigo antes do update
+    const oldLeaderId = dto.leaderId !== undefined
+      ? (await this.findOne(tenantId, id)).leaderId
+      : null;
+
+    const voter = await super.update(tenantId, id, dto);
+
+    // Sincronizar contadores se leaderId mudou
+    if (dto.leaderId !== undefined) {
+      if (oldLeaderId) await this.syncLeaderVotersCount(oldLeaderId);
+      if (voter.leaderId && voter.leaderId !== oldLeaderId) {
+        await this.syncLeaderVotersCount(voter.leaderId);
+      }
+    }
+
+    return voter;
+  }
+
+  async remove(tenantId: string, id: string) {
+    const voter = await this.findOne(tenantId, id);
+    const { leaderId } = voter;
+    const result = await super.remove(tenantId, id);
+    if (leaderId) {
+      await this.syncLeaderVotersCount(leaderId);
+    }
+    return result;
+  }
+
+  private async syncLeaderVotersCount(leaderId: string) {
+    await this.leadersRepo.query(
+      `UPDATE leaders SET "votersCount" = (
+        SELECT COUNT(*) FROM voters WHERE "leaderId" = $1::text
+      ) WHERE id = $1::uuid`,
+      [leaderId],
+    );
   }
 
   async getHeatmapData(tenantId: string) {
@@ -174,6 +212,16 @@ export class VotersService extends TenantAwareService<Voter> {
       .getRawMany();
   }
 
+  async getStatsByConfidenceLevel(tenantId: string) {
+    return this.votersRepo
+      .createQueryBuilder('v')
+      .select('v.confidenceLevel', 'confidenceLevel')
+      .addSelect('COUNT(*)', 'count')
+      .where('v.tenantId = :tenantId', { tenantId })
+      .groupBy('v.confidenceLevel')
+      .getRawMany();
+  }
+
   async getStatsByCity(tenantId: string) {
     return this.votersRepo
       .createQueryBuilder('v')
@@ -260,6 +308,10 @@ export class VotersService extends TenantAwareService<Voter> {
       'lideranca responsavel': 'leaderName',
       'liderança responsável': 'leaderName',
       articulador: 'leaderName',
+      'nivel de confianca': 'confidenceLevel',
+      'nivel de confiança': 'confidenceLevel',
+      confianca: 'confidenceLevel',
+      confiança: 'confidenceLevel',
     };
 
     // Pre-load leaders for name matching + auto-create
@@ -541,6 +593,7 @@ export class VotersService extends TenantAwareService<Voter> {
       neighborhood?: string;
       leaderId?: string;
       gender?: string;
+      confidenceLevel?: string;
     },
   ): Promise<Buffer> {
     const qb = this.votersRepo
@@ -564,6 +617,11 @@ export class VotersService extends TenantAwareService<Voter> {
     if (filters.gender) {
       qb.andWhere('v.gender = :gender', { gender: filters.gender });
     }
+    if (filters.confidenceLevel) {
+      qb.andWhere('v.confidenceLevel = :confidenceLevel', {
+        confidenceLevel: filters.confidenceLevel,
+      });
+    }
 
     const voters = await qb.getMany();
 
@@ -579,6 +637,7 @@ export class VotersService extends TenantAwareService<Voter> {
     const ws = wb.addWorksheet('Eleitores');
 
     const headers = [
+      'Lideranca',
       'Nome',
       'Telefone',
       'Email',
@@ -592,13 +651,12 @@ export class VotersService extends TenantAwareService<Voter> {
       'Titulo de Eleitor',
       'Zona',
       'Secao',
-      'Lideranca',
-      'Nivel de Apoio',
+      'Nivel de Confianca',
       'Tags',
       'Observacoes',
     ];
     const widths = [
-      30, 16, 25, 12, 18, 35, 20, 20, 8, 12, 16, 8, 8, 25, 16, 20, 35,
+      25, 30, 16, 25, 12, 18, 35, 20, 20, 8, 12, 16, 8, 8, 18, 20, 35,
     ];
 
     ws.columns = headers.map((header, i) => ({ header, width: widths[i] }));
@@ -616,6 +674,7 @@ export class VotersService extends TenantAwareService<Voter> {
 
     for (const v of voters) {
       ws.addRow([
+        v.leaderId ? (leaderMap.get(v.leaderId) ?? '') : '',
         v.name,
         v.phone ?? '',
         v.email ?? '',
@@ -629,8 +688,7 @@ export class VotersService extends TenantAwareService<Voter> {
         v.voterRegistration ?? '',
         v.votingZone ?? '',
         v.votingSection ?? '',
-        v.leaderId ? (leaderMap.get(v.leaderId) ?? '') : '',
-        v.supportLevel ?? '',
+        v.confidenceLevel ?? '',
         (v.tags ?? []).join(', '),
         v.notes ?? '',
       ]);
@@ -649,6 +707,7 @@ export class VotersService extends TenantAwareService<Voter> {
       neighborhood?: string;
       leaderId?: string;
       gender?: string;
+      confidenceLevel?: string;
     },
   ): Promise<{ data: Voter[]; total: number; page: number; limit: number }> {
     const page = Math.max(1, filters.page || 1);
@@ -675,6 +734,11 @@ export class VotersService extends TenantAwareService<Voter> {
     if (filters.gender) {
       qb.andWhere('v.gender = :gender', { gender: filters.gender });
     }
+    if (filters.confidenceLevel) {
+      qb.andWhere('v.confidenceLevel = :confidenceLevel', {
+        confidenceLevel: filters.confidenceLevel,
+      });
+    }
 
     qb.orderBy('v.createdAt', 'DESC');
 
@@ -690,6 +754,7 @@ export class VotersService extends TenantAwareService<Voter> {
       neighborhood?: string;
       leaderId?: string;
       gender?: string;
+      confidenceLevel?: string;
     },
   ): Promise<{
     total: number;
@@ -719,6 +784,11 @@ export class VotersService extends TenantAwareService<Voter> {
       }
       if (filters.gender) {
         qb.andWhere('v.gender = :gender', { gender: filters.gender });
+      }
+      if (filters.confidenceLevel) {
+        qb.andWhere('v.confidenceLevel = :confidenceLevel', {
+          confidenceLevel: filters.confidenceLevel,
+        });
       }
       return qb;
     };
@@ -771,6 +841,35 @@ export class VotersService extends TenantAwareService<Voter> {
         count: parseInt(r.count, 10),
       })),
     };
+  }
+
+  async getLeaderRankingByConfidence(tenantId: string) {
+    const rows = await this.votersRepo.query(
+      `SELECT
+         l.id AS "leaderId",
+         l.name AS "leaderName",
+         COUNT(*)::int AS "totalVoters",
+         COUNT(*) FILTER (WHERE v."confidenceLevel" = 'ALTO')::int AS "altoCount",
+         COUNT(*) FILTER (WHERE v."confidenceLevel" = 'NEUTRO')::int AS "neutroCount",
+         COUNT(*) FILTER (WHERE v."confidenceLevel" = 'BAIXO')::int AS "baixoCount",
+         SUM(
+           CASE v."confidenceLevel"
+             WHEN 'ALTO' THEN 3
+             WHEN 'NEUTRO' THEN 1
+             WHEN 'BAIXO' THEN 0.5
+             ELSE 0
+           END
+         )::float AS "score"
+       FROM voters v
+       INNER JOIN leaders l ON l.id = v."leaderId"::uuid
+       WHERE v."tenantId" = $1
+         AND v."leaderId" IS NOT NULL
+       GROUP BY l.id, l.name
+       ORDER BY "score" DESC
+       LIMIT 5`,
+      [tenantId],
+    );
+    return rows;
   }
 
   async search(tenantId: string, query: string) {

@@ -40,9 +40,12 @@ export class UsersService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, tenantId?: string) {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
     const user = await this.usersRepo.findOne({
-      where: { id },
+      where,
       relations: ['tenant'],
       select: {
         id: true,
@@ -79,8 +82,11 @@ export class UsersService {
     return this.findOne(saved.id);
   }
 
-  async update(id: string, dto: UpdateUserDto) {
-    const user = await this.usersRepo.findOne({ where: { id } });
+  async update(id: string, dto: UpdateUserDto, tenantId?: string) {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
+    const user = await this.usersRepo.findOne({ where });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
     if (dto.email && dto.email !== user.email) {
@@ -95,8 +101,11 @@ export class UsersService {
     return this.findOne(id);
   }
 
-  async remove(id: string) {
-    const user = await this.usersRepo.findOne({ where: { id } });
+  async remove(id: string, tenantId?: string) {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
+    const user = await this.usersRepo.findOne({ where });
     if (!user) throw new NotFoundException('Usuário não encontrado');
     return this.usersRepo.remove(user);
   }

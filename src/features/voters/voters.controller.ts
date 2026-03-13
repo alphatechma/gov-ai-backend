@@ -39,6 +39,7 @@ export class VotersController {
     @Query('neighborhood') neighborhood?: string,
     @Query('leaderId') leaderId?: string,
     @Query('gender') gender?: string,
+    @Query('confidenceLevel') confidenceLevel?: string,
   ) {
     return this.votersService.findAllPaginated(req.tenantId, {
       page: page ? parseInt(page, 10) : undefined,
@@ -47,6 +48,7 @@ export class VotersController {
       neighborhood,
       leaderId,
       gender,
+      confidenceLevel,
     });
   }
 
@@ -57,12 +59,14 @@ export class VotersController {
     @Query('neighborhood') neighborhood?: string,
     @Query('leaderId') leaderId?: string,
     @Query('gender') gender?: string,
+    @Query('confidenceLevel') confidenceLevel?: string,
   ) {
     return this.votersService.getListStats(req.tenantId, {
       search,
       neighborhood,
       leaderId,
       gender,
+      confidenceLevel,
     });
   }
 
@@ -106,6 +110,16 @@ export class VotersController {
     return this.votersService.getStatsBySupportLevel(req.tenantId);
   }
 
+  @Get('stats/confidence-level')
+  statsByConfidenceLevel(@Req() req: any) {
+    return this.votersService.getStatsByConfidenceLevel(req.tenantId);
+  }
+
+  @Get('stats/leader-ranking')
+  leaderRanking(@Req() req: any) {
+    return this.votersService.getLeaderRankingByConfidence(req.tenantId);
+  }
+
   @Get('export')
   async exportExcel(
     @Req() req: any,
@@ -114,12 +128,14 @@ export class VotersController {
     @Query('neighborhood') neighborhood?: string,
     @Query('leaderId') leaderId?: string,
     @Query('gender') gender?: string,
+    @Query('confidenceLevel') confidenceLevel?: string,
   ) {
     const buffer = await this.votersService.exportToExcel(req.tenantId, {
       search,
       neighborhood,
       leaderId,
       gender,
+      confidenceLevel,
     });
     res.set({
       'Content-Type':
