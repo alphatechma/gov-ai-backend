@@ -1,4 +1,17 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, Req, UseGuards, ParseUUIDPipe, UseInterceptors, UploadedFile } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Body,
+  Param,
+  Query,
+  Req,
+  UseGuards,
+  ParseUUIDPipe,
+  UseInterceptors,
+  UploadedFile,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ElectionProxyService } from './election-proxy.service';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt-auth.guard';
@@ -54,7 +67,10 @@ export class ElectionResultsController {
   // ── Analysis (all proxied to election-service) ──
 
   @Get('elections/:electionId/analysis/summary')
-  summary(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidateName') candidateName?: string) {
+  summary(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('candidateName') candidateName?: string,
+  ) {
     return this.proxy.analysis(id, 'summary', { candidateName });
   }
 
@@ -64,7 +80,10 @@ export class ElectionResultsController {
   }
 
   @Get('elections/:electionId/analysis/ranking')
-  ranking(@Param('electionId', ParseUUIDPipe) id: string, @Query('limit') limit?: string) {
+  ranking(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('limit') limit?: string,
+  ) {
     return this.proxy.analysis(id, 'ranking', { limit });
   }
 
@@ -79,37 +98,63 @@ export class ElectionResultsController {
   }
 
   @Get('elections/:electionId/analysis/by-zone')
-  byZone(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidateName') candidateName?: string) {
+  byZone(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('candidateName') candidateName?: string,
+  ) {
     return this.proxy.analysis(id, 'by-zone', { candidateName });
   }
 
   @Get('elections/:electionId/analysis/by-section')
-  bySection(@Param('electionId', ParseUUIDPipe) id: string, @Query('zone') zone?: string, @Query('candidateName') candidateName?: string) {
+  bySection(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('zone') zone?: string,
+    @Query('candidateName') candidateName?: string,
+  ) {
     return this.proxy.analysis(id, 'by-section', { zone, candidateName });
   }
 
   @Get('elections/:electionId/analysis/section-details')
-  sectionDetails(@Param('electionId', ParseUUIDPipe) id: string, @Query('zone') zone?: string) {
+  sectionDetails(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('zone') zone?: string,
+  ) {
     return this.proxy.analysis(id, 'section-details', { zone });
   }
 
   @Get('elections/:electionId/analysis/candidate-by-zone')
-  candidateByZone(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidateName') candidateName: string) {
+  candidateByZone(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('candidateName') candidateName: string,
+  ) {
     return this.proxy.analysis(id, 'candidate-by-zone', { candidateName });
   }
 
   @Get('elections/:electionId/analysis/candidate-by-section')
-  candidateBySection(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidateName') candidateName: string, @Query('zone') zone?: string) {
-    return this.proxy.analysis(id, 'candidate-by-section', { candidateName, zone });
+  candidateBySection(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('candidateName') candidateName: string,
+    @Query('zone') zone?: string,
+  ) {
+    return this.proxy.analysis(id, 'candidate-by-section', {
+      candidateName,
+      zone,
+    });
   }
 
   @Get('elections/:electionId/analysis/by-city')
-  byCity(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidateName') candidateName?: string) {
+  byCity(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('candidateName') candidateName?: string,
+  ) {
     return this.proxy.analysis(id, 'by-city', { candidateName });
   }
 
   @Get('elections/:electionId/analysis/candidate-by-city')
-  candidateByCity(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidateName') candidateName: string) {
+  candidateByCity(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('candidateName') candidateName: string,
+  ) {
     return this.proxy.analysis(id, 'candidate-by-city', { candidateName });
   }
 
@@ -119,22 +164,34 @@ export class ElectionResultsController {
   }
 
   @Get('elections/:electionId/analysis/by-neighborhood')
-  byNeighborhood(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidateName') candidateName?: string) {
+  byNeighborhood(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('candidateName') candidateName?: string,
+  ) {
     return this.proxy.analysis(id, 'by-neighborhood', { candidateName });
   }
 
   @Get('elections/:electionId/analysis/neighborhood-details')
-  neighborhoodDetails(@Param('electionId', ParseUUIDPipe) id: string, @Query('neighborhood') neighborhood: string) {
+  neighborhoodDetails(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('neighborhood') neighborhood: string,
+  ) {
     return this.proxy.analysis(id, 'neighborhood-details', { neighborhood });
   }
 
   @Get('elections/:electionId/analysis/insights')
-  insights(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidateName') candidateName?: string) {
+  insights(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('candidateName') candidateName?: string,
+  ) {
     return this.proxy.analysis(id, 'insights', { candidateName });
   }
 
   @Get('elections/:electionId/analysis/comparison')
-  comparison(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidates') candidates: string) {
+  comparison(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('candidates') candidates: string,
+  ) {
     return this.proxy.analysis(id, 'comparison', { candidates });
   }
 
@@ -144,11 +201,17 @@ export class ElectionResultsController {
     @Query('compareElectionId') compareElectionId: string,
     @Query('candidateName') candidateName: string,
   ) {
-    return this.proxy.analysis(id, 'cross-election', { compareElectionId, candidateName });
+    return this.proxy.analysis(id, 'cross-election', {
+      compareElectionId,
+      candidateName,
+    });
   }
 
   @Get('elections/:electionId/analysis/projections')
-  projections(@Param('electionId', ParseUUIDPipe) id: string, @Query('candidateName') candidateName: string) {
+  projections(
+    @Param('electionId', ParseUUIDPipe) id: string,
+    @Query('candidateName') candidateName: string,
+  ) {
     return this.proxy.analysis(id, 'projections', { candidateName });
   }
 }

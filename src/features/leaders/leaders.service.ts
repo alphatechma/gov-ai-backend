@@ -15,21 +15,26 @@ export class LeadersService extends TenantAwareService<Leader> {
     super(repo);
   }
 
-  async create(tenantId: string, dto: DeepPartial<Leader> & { createAccess?: boolean; password?: string }) {
+  async create(
+    tenantId: string,
+    dto: DeepPartial<Leader> & { createAccess?: boolean; password?: string },
+  ) {
     const { createAccess, password, ...leaderData } = dto;
 
     if (createAccess) {
       if (!leaderData.email) {
         throw new BadRequestException('E-mail e obrigatorio para criar acesso');
       }
-      if (!password || (password as string).length < 6) {
-        throw new BadRequestException('Senha com minimo de 6 caracteres e obrigatoria para criar acesso');
+      if (!password || password.length < 6) {
+        throw new BadRequestException(
+          'Senha com minimo de 6 caracteres e obrigatoria para criar acesso',
+        );
       }
 
       const user = await this.usersService.create({
         name: leaderData.name as string,
-        email: leaderData.email as string,
-        password: password as string,
+        email: leaderData.email,
+        password: password,
         role: UserRole.LEADER,
         tenantId,
         phone: leaderData.phone as string,

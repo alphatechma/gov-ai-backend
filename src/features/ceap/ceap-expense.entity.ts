@@ -5,7 +5,11 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { ExpenseCategory, TransactionType, TransactionStatus } from '../../shared/enums/features';
+import {
+  ExpenseCategory,
+  TransactionType,
+  TransactionStatus,
+} from '../../shared/enums/features';
 
 @Entity('ceap_expenses')
 export class CeapExpense {
@@ -15,10 +19,18 @@ export class CeapExpense {
   @Column()
   tenantId: string;
 
-  @Column({ type: 'enum', enum: TransactionType, default: TransactionType.DESPESA })
+  @Column({
+    type: 'enum',
+    enum: TransactionType,
+    default: TransactionType.DESPESA,
+  })
   type: TransactionType;
 
-  @Column({ type: 'enum', enum: TransactionStatus, default: TransactionStatus.PENDENTE })
+  @Column({
+    type: 'enum',
+    enum: TransactionStatus,
+    default: TransactionStatus.PENDENTE,
+  })
   status: TransactionStatus;
 
   @Column()

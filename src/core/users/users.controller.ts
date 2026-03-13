@@ -26,10 +26,7 @@ export class UsersController {
 
   @Get()
   @Roles(UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN)
-  findAll(
-    @CurrentUser() user: any,
-    @Query('tenantId') tenantId?: string,
-  ) {
+  findAll(@CurrentUser() user: any, @Query('tenantId') tenantId?: string) {
     if (user.role === UserRole.SUPER_ADMIN) {
       return this.usersService.findAll(tenantId);
     }
@@ -53,10 +50,7 @@ export class UsersController {
 
   @Patch(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN)
-  update(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateUserDto,
-  ) {
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserDto) {
     return this.usersService.update(id, dto);
   }
 

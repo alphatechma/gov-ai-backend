@@ -1,4 +1,11 @@
-import { IsArray, IsDateString, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsArray,
+  IsDateString,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 
 export class CreateVisitDto {
   @IsUUID() @IsOptional() voterId?: string;

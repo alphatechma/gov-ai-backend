@@ -32,8 +32,14 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
   async findAllPaginated(
     tenantId: string,
     filters: {
-      page?: number; limit?: number; search?: string; type?: string;
-      status?: string; neighborhood?: string; dateFrom?: string; dateTo?: string;
+      page?: number;
+      limit?: number;
+      search?: string;
+      type?: string;
+      status?: string;
+      neighborhood?: string;
+      dateFrom?: string;
+      dateTo?: string;
     },
   ): Promise<{ data: any[]; total: number; page: number; limit: number }> {
     const page = Math.max(1, filters.page || 1);
@@ -48,7 +54,9 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
       .where('h."tenantId" = :tenantId', { tenantId });
 
     if (filters.search) {
-      qb.andWhere('(h.type ILIKE :q OR h.observations ILIKE :q)', { q: `%${filters.search}%` });
+      qb.andWhere('(h.type ILIKE :q OR h.observations ILIKE :q)', {
+        q: `%${filters.search}%`,
+      });
     }
     if (filters.type) {
       qb.andWhere('h.type = :type', { type: filters.type });
@@ -57,13 +65,20 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
       qb.andWhere('h.status = :status', { status: filters.status });
     }
     if (filters.neighborhood) {
-      qb.andWhere('v.neighborhood = :neighborhood', { neighborhood: filters.neighborhood });
+      qb.andWhere('v.neighborhood = :neighborhood', {
+        neighborhood: filters.neighborhood,
+      });
     }
     if (filters.dateFrom) {
-      qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) >= :dateFrom', { dateFrom: filters.dateFrom });
+      qb.andWhere(
+        'COALESCE(h.date, CAST(h."createdAt" AS date)) >= :dateFrom',
+        { dateFrom: filters.dateFrom },
+      );
     }
     if (filters.dateTo) {
-      qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) <= :dateTo', { dateTo: filters.dateTo });
+      qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) <= :dateTo', {
+        dateTo: filters.dateTo,
+      });
     }
 
     // Get total count (before adding orderBy to avoid GROUP BY conflict)
@@ -102,12 +117,19 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
   async getListStats(
     tenantId: string,
     filters: {
-      search?: string; type?: string; status?: string;
-      neighborhood?: string; dateFrom?: string; dateTo?: string;
+      search?: string;
+      type?: string;
+      status?: string;
+      neighborhood?: string;
+      dateFrom?: string;
+      dateTo?: string;
     },
   ): Promise<{
-    total: number; pending: number; inProgress: number;
-    completed: number; cancelled: number;
+    total: number;
+    pending: number;
+    inProgress: number;
+    completed: number;
+    cancelled: number;
     types: { name: string; count: number }[];
     bairros: string[];
   }> {
@@ -118,7 +140,9 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
         .where('h."tenantId" = :tenantId', { tenantId });
 
       if (filters.search) {
-        qb.andWhere('(h.type ILIKE :q OR h.observations ILIKE :q)', { q: `%${filters.search}%` });
+        qb.andWhere('(h.type ILIKE :q OR h.observations ILIKE :q)', {
+          q: `%${filters.search}%`,
+        });
       }
       if (filters.type) {
         qb.andWhere('h.type = :type', { type: filters.type });
@@ -127,37 +151,64 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
         qb.andWhere('h.status = :status', { status: filters.status });
       }
       if (filters.neighborhood) {
-        qb.andWhere('v.neighborhood = :neighborhood', { neighborhood: filters.neighborhood });
+        qb.andWhere('v.neighborhood = :neighborhood', {
+          neighborhood: filters.neighborhood,
+        });
       }
       if (filters.dateFrom) {
-        qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) >= :dateFrom', { dateFrom: filters.dateFrom });
+        qb.andWhere(
+          'COALESCE(h.date, CAST(h."createdAt" AS date)) >= :dateFrom',
+          { dateFrom: filters.dateFrom },
+        );
       }
       if (filters.dateTo) {
-        qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) <= :dateTo', { dateTo: filters.dateTo });
+        qb.andWhere(
+          'COALESCE(h.date, CAST(h."createdAt" AS date)) <= :dateTo',
+          { dateTo: filters.dateTo },
+        );
       }
       return qb;
     };
 
-    const [totalResult, pendingResult, inProgressResult, completedResult, cancelledResult, typesResult, bairrosResult] =
-      await Promise.all([
-        baseQb().select('COUNT(*)', 'count').getRawOne(),
-        baseQb().andWhere("h.status = 'PENDING'").select('COUNT(*)', 'count').getRawOne(),
-        baseQb().andWhere("h.status = 'IN_PROGRESS'").select('COUNT(*)', 'count').getRawOne(),
-        baseQb().andWhere("h.status = 'COMPLETED'").select('COUNT(*)', 'count').getRawOne(),
-        baseQb().andWhere("h.status = 'CANCELLED'").select('COUNT(*)', 'count').getRawOne(),
-        baseQb()
-          .select('h.type', 'name')
-          .addSelect('COUNT(*)', 'count')
-          .andWhere("h.type IS NOT NULL AND h.type != ''")
-          .groupBy('h.type')
-          .orderBy('count', 'DESC')
-          .getRawMany(),
-        baseQb()
-          .select('DISTINCT v.neighborhood', 'neighborhood')
-          .andWhere("v.neighborhood IS NOT NULL AND v.neighborhood != ''")
-          .orderBy('v.neighborhood', 'ASC')
-          .getRawMany(),
-      ]);
+    const [
+      totalResult,
+      pendingResult,
+      inProgressResult,
+      completedResult,
+      cancelledResult,
+      typesResult,
+      bairrosResult,
+    ] = await Promise.all([
+      baseQb().select('COUNT(*)', 'count').getRawOne(),
+      baseQb()
+        .andWhere("h.status = 'PENDING'")
+        .select('COUNT(*)', 'count')
+        .getRawOne(),
+      baseQb()
+        .andWhere("h.status = 'IN_PROGRESS'")
+        .select('COUNT(*)', 'count')
+        .getRawOne(),
+      baseQb()
+        .andWhere("h.status = 'COMPLETED'")
+        .select('COUNT(*)', 'count')
+        .getRawOne(),
+      baseQb()
+        .andWhere("h.status = 'CANCELLED'")
+        .select('COUNT(*)', 'count')
+        .getRawOne(),
+      baseQb()
+        .select('h.type', 'name')
+        .addSelect('COUNT(*)', 'count')
+        .andWhere("h.type IS NOT NULL AND h.type != ''")
+        .groupBy('h.type')
+        .orderBy('count', 'DESC')
+        .getRawMany(),
+      baseQb()
+        .select('DISTINCT v.neighborhood', 'neighborhood')
+        .andWhere("v.neighborhood IS NOT NULL AND v.neighborhood != ''")
+        .orderBy('v.neighborhood', 'ASC')
+        .getRawMany(),
+    ]);
 
     return {
       total: parseInt(totalResult?.count ?? '0', 10),
@@ -165,7 +216,10 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
       inProgress: parseInt(inProgressResult?.count ?? '0', 10),
       completed: parseInt(completedResult?.count ?? '0', 10),
       cancelled: parseInt(cancelledResult?.count ?? '0', 10),
-      types: typesResult.map((r: any) => ({ name: r.name, count: parseInt(r.count, 10) })),
+      types: typesResult.map((r: any) => ({
+        name: r.name,
+        count: parseInt(r.count, 10),
+      })),
       bairros: bairrosResult.map((r: any) => r.neighborhood),
     };
   }
@@ -174,31 +228,48 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     // Try to find the Atendimentos sheet
     const dataSheetNames = ['Atendimentos', 'Atendimento'];
-    let sheet = workbook.Sheets[dataSheetNames.find((n) => workbook.SheetNames.includes(n)) ?? ''];
+    let sheet =
+      workbook.Sheets[
+        dataSheetNames.find((n) => workbook.SheetNames.includes(n)) ?? ''
+      ];
     if (!sheet) sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) throw new BadRequestException('Planilha vazia');
 
     let rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
-    if (rows.length === 0) throw new BadRequestException('Nenhum registro encontrado na planilha');
+    if (rows.length === 0)
+      throw new BadRequestException('Nenhum registro encontrado na planilha');
 
     // Detect report format: if any of the first rows have __EMPTY keys, it's a report
-    const isReport = rows.slice(0, 5).some((r) =>
-      Object.keys(r).some((k) => k.startsWith('__EMPTY')),
-    );
+    const isReport = rows
+      .slice(0, 5)
+      .some((r) => Object.keys(r).some((k) => k.startsWith('__EMPTY')));
     if (isReport) {
       // Find the header row: one with "Tipo" or "Tipo de Suporte" as a VALUE and multiple columns
       const headerIdx = rows.findIndex((r) => {
-        const vals = Object.values(r).map((v) => String(v).toLowerCase().trim());
-        return vals.some((v) => /^(tipo|tipo de suporte|tipo de atendimento)$/.test(v)) && Object.keys(r).length > 3;
+        const vals = Object.values(r).map((v) =>
+          String(v).toLowerCase().trim(),
+        );
+        return (
+          vals.some((v) =>
+            /^(tipo|tipo de suporte|tipo de atendimento)$/.test(v),
+          ) && Object.keys(r).length > 3
+        );
       });
       if (headerIdx >= 0) {
-        const headerValues = Object.values(rows[headerIdx]).map((v) => String(v).trim());
+        const headerValues = Object.values(rows[headerIdx]).map((v) =>
+          String(v).trim(),
+        );
         const dataRows = rows.slice(headerIdx + 1);
         rows = dataRows.map((r) => {
           const obj: Record<string, any> = {};
           const values = Object.values(r);
           headerValues.forEach((h, i) => {
-            if (h && values[i] !== undefined && values[i] !== null && String(values[i]).trim() !== '') {
+            if (
+              h &&
+              values[i] !== undefined &&
+              values[i] !== null &&
+              String(values[i]).trim() !== ''
+            ) {
               obj[h] = values[i];
             }
           });
@@ -208,32 +279,32 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
     }
 
     const COLUMN_MAP: Record<string, string> = {
-      'tipo': 'type',
+      tipo: 'type',
       'tipo de atendimento': 'type',
       'tipo de suporte': 'type',
-      'categoria': 'category',
-      'data': 'date',
+      categoria: 'category',
+      data: 'date',
       'data do atendimento': 'date',
-      'observacoes': 'observations',
-      'observações': 'observations',
-      'observação': 'observations',
-      'status': 'status',
-      'eleitor': 'voterName',
+      observacoes: 'observations',
+      observações: 'observations',
+      observação: 'observations',
+      status: 'status',
+      eleitor: 'voterName',
       'nome do eleitor': 'voterName',
       'nome da pessoa': 'voterName',
-      'lideranca': 'leaderName',
-      'liderança': 'leaderName',
+      lideranca: 'leaderName',
+      liderança: 'leaderName',
       'lideranca responsavel': 'leaderName',
       'liderança responsável': 'leaderName',
-      'articulador': 'leaderName',
+      articulador: 'leaderName',
     };
 
     const STATUS_MAP: Record<string, string> = {
-      'pendente': 'PENDING',
+      pendente: 'PENDING',
       'em andamento': 'IN_PROGRESS',
-      'concluido': 'COMPLETED',
-      'concluído': 'COMPLETED',
-      'cancelado': 'CANCELLED',
+      concluido: 'COMPLETED',
+      concluído: 'COMPLETED',
+      cancelado: 'CANCELLED',
     };
 
     // Pre-load voters and leaders for name matching
@@ -249,7 +320,8 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
       [tenantId],
     );
     const leaderByName = new Map<string, string>();
-    for (const l of leaders) leaderByName.set(l.name.toLowerCase().trim(), l.id);
+    for (const l of leaders)
+      leaderByName.set(l.name.toLowerCase().trim(), l.id);
 
     // Pre-load existing help types to auto-create new ones
     const existingTypes = await this.typeRepo.find({ where: { tenantId } });
@@ -268,14 +340,20 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
 
       for (const [header, value] of Object.entries(row)) {
         const key = COLUMN_MAP[header.toLowerCase().trim()];
-        if (key && value !== null && value !== undefined && String(value).trim() !== '') {
+        if (
+          key &&
+          value !== null &&
+          value !== undefined &&
+          String(value).trim() !== ''
+        ) {
           mapped[key] = String(value).trim();
         }
       }
 
       if (!mapped.type) {
         skipped++;
-        if (errors.length < 20) errors.push(`Linha ${i + 2}: tipo de atendimento obrigatorio`);
+        if (errors.length < 20)
+          errors.push(`Linha ${i + 2}: tipo de atendimento obrigatorio`);
         continue;
       }
 
@@ -288,7 +366,9 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
             mapped.date = `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
           }
         } else {
-          const parts = mapped.date.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+          const parts = mapped.date.match(
+            /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/,
+          );
           if (parts) {
             mapped.date = `${parts[3]}-${parts[2].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
           }
@@ -348,7 +428,8 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
               imported++;
             } catch {
               skipped++;
-              if (errors.length < 20) errors.push(`Erro ao salvar atendimento "${item.type}"`);
+              if (errors.length < 20)
+                errors.push(`Erro ao salvar atendimento "${item.type}"`);
             }
           }
         }
@@ -372,7 +453,8 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
             imported++;
           } catch {
             skipped++;
-            if (errors.length < 20) errors.push(`Erro ao salvar atendimento "${item.type}"`);
+            if (errors.length < 20)
+              errors.push(`Erro ao salvar atendimento "${item.type}"`);
           }
         }
       }
@@ -386,12 +468,24 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
       await this.typeRepo.save(typeEntities);
     }
 
-    return { imported, skipped, total: rows.length, errors: errors.slice(0, 20) };
+    return {
+      imported,
+      skipped,
+      total: rows.length,
+      errors: errors.slice(0, 20),
+    };
   }
 
   async exportToExcel(
     tenantId: string,
-    filters: { search?: string; type?: string; status?: string; neighborhood?: string; dateFrom?: string; dateTo?: string },
+    filters: {
+      search?: string;
+      type?: string;
+      status?: string;
+      neighborhood?: string;
+      dateFrom?: string;
+      dateTo?: string;
+    },
   ): Promise<Buffer> {
     const qb = this.repository
       .createQueryBuilder('h')
@@ -399,7 +493,9 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
       .orderBy('h.createdAt', 'DESC');
 
     if (filters.search) {
-      qb.andWhere('(h.type ILIKE :q OR h.observations ILIKE :q)', { q: `%${filters.search}%` });
+      qb.andWhere('(h.type ILIKE :q OR h.observations ILIKE :q)', {
+        q: `%${filters.search}%`,
+      });
     }
     if (filters.type) {
       qb.andWhere('h.type = :type', { type: filters.type });
@@ -408,10 +504,15 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
       qb.andWhere('h.status = :status', { status: filters.status });
     }
     if (filters.dateFrom) {
-      qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) >= :dateFrom', { dateFrom: filters.dateFrom });
+      qb.andWhere(
+        'COALESCE(h.date, CAST(h."createdAt" AS date)) >= :dateFrom',
+        { dateFrom: filters.dateFrom },
+      );
     }
     if (filters.dateTo) {
-      qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) <= :dateTo', { dateTo: filters.dateTo });
+      qb.andWhere('COALESCE(h.date, CAST(h."createdAt" AS date)) <= :dateTo', {
+        dateTo: filters.dateTo,
+      });
     }
 
     let records = await qb.getMany();
@@ -422,7 +523,8 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
       [tenantId],
     );
     const voterMap = new Map<string, { name: string; neighborhood: string }>();
-    for (const v of voters) voterMap.set(v.id, { name: v.name, neighborhood: v.neighborhood });
+    for (const v of voters)
+      voterMap.set(v.id, { name: v.name, neighborhood: v.neighborhood });
 
     // Load leaders for name mapping
     const leaders = await this.repository.manager.query(
@@ -451,7 +553,17 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Atendimentos');
 
-    const headers = ['Data', 'Tipo', 'Categoria', 'Status', 'Eleitor', 'Bairro', 'Lideranca', 'Observacoes', 'Resolucao'];
+    const headers = [
+      'Data',
+      'Tipo',
+      'Categoria',
+      'Status',
+      'Eleitor',
+      'Bairro',
+      'Lideranca',
+      'Observacoes',
+      'Resolucao',
+    ];
     const widths = [14, 25, 20, 16, 30, 20, 25, 40, 40];
 
     ws.columns = headers.map((header, i) => ({ header, width: widths[i] }));
@@ -459,7 +571,11 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
     const headerRow = ws.getRow(1);
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4A4A4A' } };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF4A4A4A' },
+      };
       cell.alignment = { horizontal: 'center' };
     });
 
@@ -486,7 +602,15 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Atendimentos');
 
-    const headers = ['Tipo', 'Categoria', 'Data', 'Status', 'Eleitor', 'Lideranca', 'Observacoes'];
+    const headers = [
+      'Tipo',
+      'Categoria',
+      'Data',
+      'Status',
+      'Eleitor',
+      'Lideranca',
+      'Observacoes',
+    ];
     const widths = [25, 20, 14, 16, 30, 25, 40];
 
     ws.columns = headers.map((header, i) => ({ header, width: widths[i] }));
@@ -494,7 +618,11 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
     const headerRow = ws.getRow(1);
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4A4A4A' } };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF4A4A4A' },
+      };
       cell.alignment = { horizontal: 'center' };
     });
 

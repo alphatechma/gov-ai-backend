@@ -3,7 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CeapExpense } from './ceap-expense.entity';
 import { TenantAwareService } from '../../shared/base/tenant-aware.service';
-import { TransactionType, TransactionStatus } from '../../shared/enums/features';
+import {
+  TransactionType,
+  TransactionStatus,
+} from '../../shared/enums/features';
 
 @Injectable()
 export class CeapService extends TenantAwareService<CeapExpense> {
@@ -43,7 +46,8 @@ export class CeapService extends TenantAwareService<CeapExpense> {
       const val = Number(row.total);
       if (row.type === TransactionType.RECEITA) totalReceitas += val;
       else totalDespesas += val;
-      if (row.status === TransactionStatus.PENDENTE) pendentes += Number(row.count);
+      if (row.status === TransactionStatus.PENDENTE)
+        pendentes += Number(row.count);
     }
 
     return {
@@ -66,7 +70,10 @@ export class CeapService extends TenantAwareService<CeapExpense> {
       .orderBy("TO_CHAR(ceap.date, 'YYYY-MM')", 'ASC')
       .getRawMany();
 
-    const months: Record<string, { month: string; receitas: number; despesas: number }> = {};
+    const months: Record<
+      string,
+      { month: string; receitas: number; despesas: number }
+    > = {};
     for (const row of rows) {
       if (!months[row.month]) {
         months[row.month] = { month: row.month, receitas: 0, despesas: 0 };

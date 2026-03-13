@@ -1,4 +1,11 @@
-import { IsArray, IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsDateString,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { RequestType } from '../../../shared/enums/features';
 
 export class CreateExecutiveRequestDto {

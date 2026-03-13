@@ -10,9 +10,15 @@ export class TasksService extends TenantAwareService<Task> {
     super(repo);
   }
 
-  async reorder(tenantId: string, items: { id: string; column: string; position: number }[]) {
+  async reorder(
+    tenantId: string,
+    items: { id: string; column: string; position: number }[],
+  ) {
     const promises = items.map((item) =>
-      this.repository.update({ id: item.id, tenantId } as any, { column: item.column, position: item.position } as any),
+      this.repository.update(
+        { id: item.id, tenantId } as any,
+        { column: item.column, position: item.position } as any,
+      ),
     );
     await Promise.all(promises);
     return { success: true };

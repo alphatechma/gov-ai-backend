@@ -164,12 +164,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.userId,
     );
 
-    this.server
-      .to(`conversation:${data.conversationId}`)
-      .emit('message:read', {
-        conversationId: data.conversationId,
-        userId: client.userId,
-      });
+    this.server.to(`conversation:${data.conversationId}`).emit('message:read', {
+      conversationId: data.conversationId,
+      userId: client.userId,
+    });
   }
 
   @SubscribeMessage('typing:start')

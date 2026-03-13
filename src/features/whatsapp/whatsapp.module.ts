@@ -12,7 +12,11 @@ import { WhatsappGateway } from './whatsapp.gateway';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([WhatsappConnection, WhatsappMessage, TenantModuleEntity]),
+    TypeOrmModule.forFeature([
+      WhatsappConnection,
+      WhatsappMessage,
+      TenantModuleEntity,
+    ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

@@ -70,6 +70,20 @@ export class AuthService {
               slug: user.tenant.slug,
               politicalProfile: user.tenant.politicalProfile,
               logoUrl: user.tenant.logoUrl,
+              bannerUrl: user.tenant.bannerUrl,
+              faviconUrl: user.tenant.faviconUrl,
+              appName: user.tenant.appName,
+              primaryColor: user.tenant.primaryColor,
+              primaryColorDark: user.tenant.primaryColorDark,
+              loginBgColor: user.tenant.loginBgColor,
+              loginBgColorEnd: user.tenant.loginBgColorEnd,
+              dashboardBannerUrl: user.tenant.dashboardBannerUrl,
+              sidebarColor: user.tenant.sidebarColor,
+              headerColor: user.tenant.headerColor,
+              fontFamily: user.tenant.fontFamily,
+              borderRadius: user.tenant.borderRadius,
+              showBannerInSidebar: user.tenant.showBannerInSidebar,
+              sidebarBannerPosition: user.tenant.sidebarBannerPosition,
             }
           : null,
         enabledModules,
@@ -144,7 +158,9 @@ export class AuthService {
 
     if (dto.password) {
       if (!dto.currentPassword) {
-        throw new BadRequestException('Senha atual é obrigatória para alterar a senha');
+        throw new BadRequestException(
+          'Senha atual é obrigatória para alterar a senha',
+        );
       }
       const valid = await bcrypt.compare(dto.currentPassword, user.password);
       if (!valid) {
@@ -154,7 +170,9 @@ export class AuthService {
     }
 
     if (dto.email && dto.email !== user.email) {
-      const existing = await this.usersRepo.findOne({ where: { email: dto.email } });
+      const existing = await this.usersRepo.findOne({
+        where: { email: dto.email },
+      });
       if (existing) throw new ConflictException('Email já cadastrado');
       user.email = dto.email;
     }

@@ -1,7 +1,9 @@
 import { NotFoundException } from '@nestjs/common';
 import { Repository, FindOptionsWhere, DeepPartial } from 'typeorm';
 
-export abstract class TenantAwareService<T extends { id: string; tenantId: string }> {
+export abstract class TenantAwareService<
+  T extends { id: string; tenantId: string },
+> {
   constructor(protected readonly repository: Repository<T>) {}
 
   async findAll(tenantId: string, filters?: FindOptionsWhere<T>) {
@@ -21,7 +23,10 @@ export abstract class TenantAwareService<T extends { id: string; tenantId: strin
   }
 
   async create(tenantId: string, dto: DeepPartial<T>) {
-    const entity = this.repository.create({ ...dto, tenantId } as DeepPartial<T>);
+    const entity = this.repository.create({
+      ...dto,
+      tenantId,
+    } as DeepPartial<T>);
     return this.repository.save(entity);
   }
 

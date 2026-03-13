@@ -69,8 +69,13 @@ export class ChatService {
       .filter((p) => !p.userName);
 
     if (missingNameParticipants.length > 0) {
-      const missingIds = [...new Set(missingNameParticipants.map((p) => p.userId))];
-      const users = await this.userRepo.find({ where: { id: In(missingIds) }, select: ['id', 'name'] });
+      const missingIds = [
+        ...new Set(missingNameParticipants.map((p) => p.userId)),
+      ];
+      const users = await this.userRepo.find({
+        where: { id: In(missingIds) },
+        select: ['id', 'name'],
+      });
       const nameMap = new Map(users.map((u) => [u.id, u.name]));
 
       const updates = missingNameParticipants
@@ -92,7 +97,11 @@ export class ChatService {
     });
   }
 
-  async getConversation(tenantId: string, conversationId: string, userId: string) {
+  async getConversation(
+    tenantId: string,
+    conversationId: string,
+    userId: string,
+  ) {
     const conversation = await this.conversationRepo.findOne({
       where: { id: conversationId, tenantId },
       relations: ['participants'],
@@ -111,16 +120,25 @@ export class ChatService {
     dto: CreateDirectConversationDto,
   ) {
     if (dto.participantId === userId) {
-      throw new BadRequestException('Não é possível criar conversa consigo mesmo');
+      throw new BadRequestException(
+        'Não é possível criar conversa consigo mesmo',
+      );
     }
 
-    const existing = await this.findExistingDirect(tenantId, userId, dto.participantId);
+    const existing = await this.findExistingDirect(
+      tenantId,
+      userId,
+      dto.participantId,
+    );
     if (existing) {
       // Fix missing participant names on existing conversations
       const missingNames = existing.participants.filter((p) => !p.userName);
       if (missingNames.length > 0) {
         const ids = missingNames.map((p) => p.userId);
-        const users = await this.userRepo.find({ where: { id: In(ids) }, select: ['id', 'name'] });
+        const users = await this.userRepo.find({
+          where: { id: In(ids) },
+          select: ['id', 'name'],
+        });
         const nameMap = new Map(users.map((u) => [u.id, u.name]));
         for (const p of missingNames) {
           if (nameMap.has(p.userId)) {
@@ -181,16 +199,20 @@ export class ChatService {
     const allUserIds = [...new Set([userId, ...dto.participantIds])];
     const otherIds = allUserIds.filter((uid) => uid !== userId);
 
-    const otherUsers = otherIds.length > 0
-      ? await this.userRepo.find({ where: { id: In(otherIds) }, select: ['id', 'name'] })
-      : [];
+    const otherUsers =
+      otherIds.length > 0
+        ? await this.userRepo.find({
+            where: { id: In(otherIds) },
+            select: ['id', 'name'],
+          })
+        : [];
     const nameMap = new Map(otherUsers.map((u) => [u.id, u.name]));
 
     const participants = allUserIds.map((uid) =>
       this.participantRepo.create({
         conversationId: saved.id,
         userId: uid,
-        userName: uid === userId ? userName : nameMap.get(uid) ?? undefined,
+        userName: uid === userId ? userName : (nameMap.get(uid) ?? undefined),
         role: uid === userId ? ParticipantRole.ADMIN : ParticipantRole.MEMBER,
       }),
     );
@@ -209,7 +231,11 @@ export class ChatService {
     userId: string,
     dto: UpdateConversationDto,
   ) {
-    const conversation = await this.getConversation(tenantId, conversationId, userId);
+    const conversation = await this.getConversation(
+      tenantId,
+      conversationId,
+      userId,
+    );
 
     if (conversation.type === ConversationType.DIRECT) {
       throw new BadRequestException('Não é possível editar conversa direta');
@@ -219,11 +245,21 @@ export class ChatService {
     return this.conversationRepo.save(conversation);
   }
 
-  async deleteConversation(tenantId: string, conversationId: string, userId: string) {
-    const conversation = await this.getConversation(tenantId, conversationId, userId);
+  async deleteConversation(
+    tenantId: string,
+    conversationId: string,
+    userId: string,
+  ) {
+    const conversation = await this.getConversation(
+      tenantId,
+      conversationId,
+      userId,
+    );
 
     if (conversation.type === ConversationType.GROUP) {
-      const participant = conversation.participants.find((p) => p.userId === userId);
+      const participant = conversation.participants.find(
+        (p) => p.userId === userId,
+      );
       if (participant?.role !== ParticipantRole.ADMIN) {
         throw new ForbiddenException('Apenas admins podem excluir o grupo');
       }
@@ -258,7 +294,11 @@ export class ChatService {
     userName: string,
     dto: SendMessageDto,
   ) {
-    const conversation = await this.getConversation(tenantId, conversationId, userId);
+    const conversation = await this.getConversation(
+      tenantId,
+      conversationId,
+      userId,
+    );
 
     const message = this.messageRepo.create({
       conversationId,
@@ -315,10 +355,16 @@ export class ChatService {
     userId: string,
     targetUserId: string,
   ) {
-    const conversation = await this.getConversation(tenantId, conversationId, userId);
+    const conversation = await this.getConversation(
+      tenantId,
+      conversationId,
+      userId,
+    );
 
     if (conversation.type !== ConversationType.GROUP) {
-      throw new BadRequestException('Só é possível adicionar membros em grupos');
+      throw new BadRequestException(
+        'Só é possível adicionar membros em grupos',
+      );
     }
 
     const existing = await this.participantRepo.findOne({
@@ -347,7 +393,11 @@ export class ChatService {
     userId: string,
     targetUserId: string,
   ) {
-    const conversation = await this.getConversation(tenantId, conversationId, userId);
+    const conversation = await this.getConversation(
+      tenantId,
+      conversationId,
+      userId,
+    );
 
     if (conversation.type !== ConversationType.GROUP) {
       throw new BadRequestException('Só é possível remover membros de grupos');
@@ -363,7 +413,8 @@ export class ChatService {
     const participant = await this.participantRepo.findOne({
       where: { conversationId, userId: targetUserId },
     });
-    if (!participant) throw new NotFoundException('Participante não encontrado');
+    if (!participant)
+      throw new NotFoundException('Participante não encontrado');
 
     return this.participantRepo.remove(participant);
   }
@@ -375,7 +426,8 @@ export class ChatService {
       where: { conversationId, userId },
     });
 
-    if (!participant) throw new NotFoundException('Participante não encontrado');
+    if (!participant)
+      throw new NotFoundException('Participante não encontrado');
     participant.muted = !participant.muted;
     return this.participantRepo.save(participant);
   }

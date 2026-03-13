@@ -6,7 +6,9 @@ import { TenantAwareService } from '../../shared/base/tenant-aware.service';
 
 @Injectable()
 export class ExecutiveRequestsService extends TenantAwareService<ExecutiveRequest> {
-  constructor(@InjectRepository(ExecutiveRequest) repo: Repository<ExecutiveRequest>) {
+  constructor(
+    @InjectRepository(ExecutiveRequest) repo: Repository<ExecutiveRequest>,
+  ) {
     super(repo);
   }
 }

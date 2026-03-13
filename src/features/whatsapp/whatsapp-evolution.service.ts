@@ -89,9 +89,7 @@ export class WhatsappEvolutionService
           await this.connectionRepo.update(conn.id, { status });
         }
       } catch (err) {
-        this.logger.error(
-          `Failed to restore ${conn.tenantId}: ${err.message}`,
-        );
+        this.logger.error(`Failed to restore ${conn.tenantId}: ${err.message}`);
         this.instances.set(conn.tenantId, {
           instanceName: conn.instanceName,
           instanceToken: conn.instanceToken,
@@ -114,7 +112,9 @@ export class WhatsappEvolutionService
     });
     if (!conn) throw new Error('Conexão não encontrada');
 
-    const instanceName = existing?.instanceName || `governeai_${tenantId.replace(/-/g, '').slice(0, 16)}`;
+    const instanceName =
+      existing?.instanceName ||
+      `governeai_${tenantId.replace(/-/g, '').slice(0, 16)}`;
 
     // Try to get instanceToken from: in-memory cache → DB → Evolution API fetch
     let instanceToken = existing?.instanceToken || conn.instanceToken || '';
@@ -151,7 +151,10 @@ export class WhatsappEvolutionService
         this.instances.set(tenantId, {
           instanceName,
           instanceToken,
-          status: state === 'open' ? ConnectionStatus.CONNECTED : ConnectionStatus.PENDING,
+          status:
+            state === 'open'
+              ? ConnectionStatus.CONNECTED
+              : ConnectionStatus.PENDING,
           qrCode: null,
         });
 
@@ -350,9 +353,10 @@ export class WhatsappEvolutionService
 
   // ── Status ──
 
-  async getStatus(
-    tenantId: string,
-  ): Promise<{ status: ConnectionStatus | 'DISCONNECTED'; qrCode: string | null }> {
+  async getStatus(tenantId: string): Promise<{
+    status: ConnectionStatus | 'DISCONNECTED';
+    qrCode: string | null;
+  }> {
     const inst = this.instances.get(tenantId);
     if (inst) return { status: inst.status, qrCode: inst.qrCode };
 
@@ -400,11 +404,7 @@ export class WhatsappEvolutionService
 
   // ── Webhook Handlers ──
 
-  async handleWebhook(
-    tenantId: string,
-    event: string,
-    data: any,
-  ) {
+  async handleWebhook(tenantId: string, event: string, data: any) {
     this.logger.log(`Webhook [${event}] for tenant ${tenantId}`);
 
     switch (event) {
@@ -435,7 +435,9 @@ export class WhatsappEvolutionService
 
   private async handleConnectionUpdate(tenantId: string, data: any) {
     const state = data?.state || data?.status || data?.instance?.state;
-    this.logger.log(`[CONNECTION_UPDATE] state="${state}" data keys: ${data ? Object.keys(data).join(',') : 'null'}`);
+    this.logger.log(
+      `[CONNECTION_UPDATE] state="${state}" data keys: ${data ? Object.keys(data).join(',') : 'null'}`,
+    );
     const inst = this.instances.get(tenantId);
     if (!inst) return;
 
@@ -513,7 +515,9 @@ export class WhatsappEvolutionService
     for (const msg of messages) {
       const key = msg.key;
       if (!key) {
-        this.logger.warn(`[MESSAGES_UPSERT] message without key, skipping. Keys: ${msg ? Object.keys(msg).join(',') : 'null'}`);
+        this.logger.warn(
+          `[MESSAGES_UPSERT] message without key, skipping. Keys: ${msg ? Object.keys(msg).join(',') : 'null'}`,
+        );
         continue;
       }
 
@@ -665,7 +669,9 @@ export class WhatsappEvolutionService
     tenantId: string,
   ) {
     if (!this.webhookUrl) {
-      this.logger.warn('EVOLUTION_WEBHOOK_URL not configured, skipping webhook setup');
+      this.logger.warn(
+        'EVOLUTION_WEBHOOK_URL not configured, skipping webhook setup',
+      );
       return;
     }
 
@@ -725,10 +731,7 @@ export class WhatsappEvolutionService
 
       // Evolution API v2 returns token at root level
       const token =
-        instance?.token ||
-        instance?.instance?.apikey ||
-        instance?.apikey ||
-        '';
+        instance?.token || instance?.instance?.apikey || instance?.apikey || '';
 
       return token ? { token } : null;
     } catch (err) {

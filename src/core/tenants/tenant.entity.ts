@@ -39,6 +39,48 @@ export class Tenant {
   @Column({ nullable: true })
   logoUrl: string;
 
+  @Column({ nullable: true })
+  bannerUrl: string;
+
+  @Column({ nullable: true })
+  faviconUrl: string;
+
+  @Column({ nullable: true })
+  appName: string;
+
+  @Column({ nullable: true })
+  primaryColor: string;
+
+  @Column({ nullable: true })
+  primaryColorDark: string;
+
+  @Column({ nullable: true })
+  loginBgColor: string;
+
+  @Column({ nullable: true })
+  loginBgColorEnd: string;
+
+  @Column({ nullable: true })
+  dashboardBannerUrl: string;
+
+  @Column({ nullable: true })
+  sidebarColor: string;
+
+  @Column({ nullable: true })
+  headerColor: string;
+
+  @Column({ nullable: true })
+  fontFamily: string;
+
+  @Column({ nullable: true })
+  borderRadius: string;
+
+  @Column({ default: false })
+  showBannerInSidebar: boolean;
+
+  @Column({ nullable: true, default: 'bottom' })
+  sidebarBannerPosition: string;
+
   @Column({ default: true })
   active: boolean;
 

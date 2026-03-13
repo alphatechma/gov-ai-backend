@@ -18,7 +18,9 @@ interface AuthenticatedSocket extends Socket {
   cors: { origin: '*' },
   namespace: '/whatsapp',
 })
-export class WhatsappGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class WhatsappGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server: Server;
 
@@ -33,11 +35,15 @@ export class WhatsappGateway implements OnGatewayConnection, OnGatewayDisconnect
     });
 
     this.evolution.on('connected', ({ tenantId, phoneNumber, pushName }) => {
-      this.server?.to(`tenant:${tenantId}`).emit('whatsapp:connected', { phoneNumber, pushName });
+      this.server
+        ?.to(`tenant:${tenantId}`)
+        .emit('whatsapp:connected', { phoneNumber, pushName });
     });
 
     this.evolution.on('disconnected', ({ tenantId, loggedOut }) => {
-      this.server?.to(`tenant:${tenantId}`).emit('whatsapp:disconnected', { loggedOut });
+      this.server
+        ?.to(`tenant:${tenantId}`)
+        .emit('whatsapp:disconnected', { loggedOut });
     });
 
     this.evolution.on('message', ({ tenantId, message }) => {

@@ -15,21 +15,29 @@ export class StaffService extends TenantAwareService<StaffMember> {
     super(repo);
   }
 
-  async create(tenantId: string, dto: DeepPartial<StaffMember> & { createAccess?: boolean; password?: string }) {
+  async create(
+    tenantId: string,
+    dto: DeepPartial<StaffMember> & {
+      createAccess?: boolean;
+      password?: string;
+    },
+  ) {
     const { createAccess, password, ...staffData } = dto;
 
     if (createAccess) {
       if (!staffData.email) {
         throw new BadRequestException('E-mail e obrigatorio para criar acesso');
       }
-      if (!password || (password as string).length < 6) {
-        throw new BadRequestException('Senha com minimo de 6 caracteres e obrigatoria para criar acesso');
+      if (!password || password.length < 6) {
+        throw new BadRequestException(
+          'Senha com minimo de 6 caracteres e obrigatoria para criar acesso',
+        );
       }
 
       const user = await this.usersService.create({
         name: staffData.name as string,
-        email: staffData.email as string,
-        password: password as string,
+        email: staffData.email,
+        password: password,
         role: UserRole.ADVISOR,
         tenantId,
         phone: staffData.phone as string,

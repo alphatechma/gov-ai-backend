@@ -13,9 +13,18 @@ const STAT_MODULE_MAP: Record<string, { table: string; moduleKey: string }> = {
   bills: { table: 'legislative_bills', moduleKey: 'bills' },
   amendments: { table: 'amendments', moduleKey: 'amendments' },
   ceapExpenses: { table: 'ceap_expenses', moduleKey: 'ceap' },
-  executiveRequests: { table: 'executive_requests', moduleKey: 'executive-requests' },
-  electionResults: { table: 'election_results', moduleKey: 'election-analysis' },
-  politicalContacts: { table: 'political_contacts', moduleKey: 'political-contacts' },
+  executiveRequests: {
+    table: 'executive_requests',
+    moduleKey: 'executive-requests',
+  },
+  electionResults: {
+    table: 'election_results',
+    moduleKey: 'election-analysis',
+  },
+  politicalContacts: {
+    table: 'political_contacts',
+    moduleKey: 'political-contacts',
+  },
   staffMembers: { table: 'staff_members', moduleKey: 'staff' },
   projects: { table: 'law_projects', moduleKey: 'projects' },
 };
@@ -102,7 +111,12 @@ export class DashboardService {
       pendingHelpRecords = parseInt(row.count, 10);
     }
 
-    return { todayAppointments, pendingTasks, billsInProgress, pendingHelpRecords };
+    return {
+      todayAppointments,
+      pendingTasks,
+      billsInProgress,
+      pendingHelpRecords,
+    };
   }
 
   async getBirthdays(tenantId: string) {
@@ -140,8 +154,14 @@ export class DashboardService {
       const bd = new Date(person.birthDate);
       const personMD = `${String(bd.getMonth() + 1).padStart(2, '0')}-${String(bd.getDate()).padStart(2, '0')}`;
 
-      const thisYearBd = new Date(today.getFullYear(), bd.getMonth(), bd.getDate());
-      const diff = Math.floor((thisYearBd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      const thisYearBd = new Date(
+        today.getFullYear(),
+        bd.getMonth(),
+        bd.getDate(),
+      );
+      const diff = Math.floor(
+        (thisYearBd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+      );
 
       if (personMD === todayMD || (diff >= 0 && diff <= 7)) {
         result.push({
@@ -220,7 +240,11 @@ export class DashboardService {
     // Voter analysis (requires 'voters' module)
     if (enabledKeys.has('voters')) {
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const startOfLastMonth = new Date(
+        now.getFullYear(),
+        now.getMonth() - 1,
+        1,
+      );
 
       const [thisMonth] = await this.dataSource.query(
         `SELECT COUNT(*) as count FROM "voters"
@@ -249,9 +273,10 @@ export class DashboardService {
       const thisMonthCount = parseInt(thisMonth.count, 10);
       const lastMonthCount = parseInt(lastMonth.count, 10);
       const totalVotersCount = parseInt(totalVoters.count, 10);
-      const growth = lastMonthCount > 0
-        ? ((thisMonthCount - lastMonthCount) / lastMonthCount) * 100
-        : 0;
+      const growth =
+        lastMonthCount > 0
+          ? ((thisMonthCount - lastMonthCount) / lastMonthCount) * 100
+          : 0;
 
       result.voterAnalysis = {
         thisMonth: thisMonthCount,
@@ -260,9 +285,11 @@ export class DashboardService {
         topNeighborhoods: topNeighborhoods.map((n: any) => ({
           name: n.neighborhood,
           count: parseInt(n.count, 10),
-          percentage: totalVotersCount > 0
-            ? Math.round((parseInt(n.count, 10) / totalVotersCount) * 1000) / 10
-            : 0,
+          percentage:
+            totalVotersCount > 0
+              ? Math.round((parseInt(n.count, 10) / totalVotersCount) * 1000) /
+                10
+              : 0,
         })),
       };
 
@@ -293,7 +320,8 @@ export class DashboardService {
       result.trends = {
         thisWeek: parseInt(thisWeek.count, 10),
         lastWeek: parseInt(lastWeek.count, 10),
-        weeklyChange: parseInt(thisWeek.count, 10) - parseInt(lastWeek.count, 10),
+        weeklyChange:
+          parseInt(thisWeek.count, 10) - parseInt(lastWeek.count, 10),
         dayOfWeek: dayOfWeek.map((d: any) => ({
           day: parseInt(d.dow, 10),
           count: parseInt(d.count, 10),
@@ -334,18 +362,20 @@ export class DashboardService {
         active: parseInt(activeLeaders.count, 10),
         total: parseInt(totalLeaders.count, 10),
         zeroVoters: parseInt(zeroVotersLeaders.count, 10),
-        avgPerLeader: parseInt(totalLeaders.count, 10) > 0
-          ? Math.round(totalVotersCount / parseInt(totalLeaders.count, 10))
-          : 0,
+        avgPerLeader:
+          parseInt(totalLeaders.count, 10) > 0
+            ? Math.round(totalVotersCount / parseInt(totalLeaders.count, 10))
+            : 0,
         top5: leaderPerformance.map((l: any) => ({
           id: l.id,
           name: l.name,
           region: l.region,
           votersCount: l.votersCount,
           votersGoal: l.votersGoal,
-          progress: l.votersGoal > 0
-            ? Math.round((l.votersCount / l.votersGoal) * 100)
-            : 0,
+          progress:
+            l.votersGoal > 0
+              ? Math.round((l.votersCount / l.votersGoal) * 100)
+              : 0,
         })),
       };
     }

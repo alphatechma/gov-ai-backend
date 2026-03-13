@@ -1,4 +1,19 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, Res, UseGuards, UseInterceptors, UploadedFile, ParseUUIDPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { HelpRecordsService } from './help-records.service';
@@ -15,13 +30,19 @@ export class HelpRecordsController {
   constructor(private service: HelpRecordsService) {}
 
   @Get('types')
-  findAllTypes(@Req() req: any) { return this.service.findAllTypes(req.tenantId); }
+  findAllTypes(@Req() req: any) {
+    return this.service.findAllTypes(req.tenantId);
+  }
 
   @Post('types')
-  createType(@Req() req: any, @Body('name') name: string) { return this.service.createType(req.tenantId, name); }
+  createType(@Req() req: any, @Body('name') name: string) {
+    return this.service.createType(req.tenantId, name);
+  }
 
   @Delete('types/:typeId')
-  removeType(@Req() req: any, @Param('typeId', ParseUUIDPipe) typeId: string) { return this.service.removeType(req.tenantId, typeId); }
+  removeType(@Req() req: any, @Param('typeId', ParseUUIDPipe) typeId: string) {
+    return this.service.removeType(req.tenantId, typeId);
+  }
 
   @Get('export')
   async exportExcel(
@@ -35,10 +56,16 @@ export class HelpRecordsController {
     @Query('dateTo') dateTo?: string,
   ) {
     const buffer = await this.service.exportToExcel(req.tenantId, {
-      search, type, status, neighborhood, dateFrom, dateTo,
+      search,
+      type,
+      status,
+      neighborhood,
+      dateFrom,
+      dateTo,
     });
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': 'attachment; filename="atendimentos.xlsx"',
     });
     res.send(buffer);
@@ -48,7 +75,8 @@ export class HelpRecordsController {
   async downloadTemplate(@Res() res: Response) {
     const buffer = await this.service.generateTemplate();
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': 'attachment; filename="modelo_atendimentos.xlsx"',
     });
     res.send(buffer);
@@ -105,14 +133,26 @@ export class HelpRecordsController {
   }
 
   @Get(':id')
-  findOne(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) { return this.service.findOne(req.tenantId, id); }
+  findOne(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
+    return this.service.findOne(req.tenantId, id);
+  }
 
   @Post()
-  create(@Req() req: any, @Body() dto: CreateHelpRecordDto) { return this.service.create(req.tenantId, dto); }
+  create(@Req() req: any, @Body() dto: CreateHelpRecordDto) {
+    return this.service.create(req.tenantId, dto);
+  }
 
   @Patch(':id')
-  update(@Req() req: any, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateHelpRecordDto) { return this.service.update(req.tenantId, id, dto); }
+  update(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateHelpRecordDto,
+  ) {
+    return this.service.update(req.tenantId, id, dto);
+  }
 
   @Delete(':id')
-  remove(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) { return this.service.remove(req.tenantId, id); }
+  remove(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
+    return this.service.remove(req.tenantId, id);
+  }
 }

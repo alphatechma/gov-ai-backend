@@ -60,14 +60,23 @@ export class WhatsappController {
   @UseGuards(JwtAuthGuard, ModuleAccessGuard)
   @RequiresModule('whatsapp')
   sendMessage(@Req() req: any, @Body() dto: SendMessageDto) {
-    return this.whatsappService.sendMessage(req.tenantId, dto.phone, dto.content, dto.quotedId);
+    return this.whatsappService.sendMessage(
+      req.tenantId,
+      dto.phone,
+      dto.content,
+      dto.quotedId,
+    );
   }
 
   @Post('broadcast')
   @UseGuards(JwtAuthGuard, ModuleAccessGuard)
   @RequiresModule('whatsapp')
   broadcast(@Req() req: any, @Body() dto: BroadcastDto) {
-    return this.whatsappService.broadcast(req.tenantId, dto.phones, dto.content);
+    return this.whatsappService.broadcast(
+      req.tenantId,
+      dto.phones,
+      dto.content,
+    );
   }
 
   // ── Chat History ──

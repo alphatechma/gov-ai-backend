@@ -1,7 +1,10 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike } from 'typeorm';
-import { WhatsappConnection, ConnectionStatus } from './entities/whatsapp-connection.entity';
+import {
+  WhatsappConnection,
+  ConnectionStatus,
+} from './entities/whatsapp-connection.entity';
 import { WhatsappMessage } from './entities/whatsapp-message.entity';
 import { WhatsappEvolutionService } from './whatsapp-evolution.service';
 
@@ -67,9 +70,16 @@ export class WhatsappService {
 
   // ── Messaging ──
 
-  async sendMessage(tenantId: string, phone: string, content: string, quotedId?: string) {
+  async sendMessage(
+    tenantId: string,
+    phone: string,
+    content: string,
+    quotedId?: string,
+  ) {
     if (!(await this.evolution.isConnected(tenantId))) {
-      throw new BadRequestException('WhatsApp não está conectado. Conecte primeiro.');
+      throw new BadRequestException(
+        'WhatsApp não está conectado. Conecte primeiro.',
+      );
     }
     return this.evolution.sendMessage(tenantId, phone, content, quotedId);
   }
@@ -79,7 +89,9 @@ export class WhatsappService {
       throw new BadRequestException('WhatsApp não está conectado.');
     }
     if (phones.length > 100) {
-      throw new BadRequestException('Máximo de 100 destinatários por broadcast.');
+      throw new BadRequestException(
+        'Máximo de 100 destinatários por broadcast.',
+      );
     }
     return this.evolution.broadcast(tenantId, phones, content);
   }
@@ -91,14 +103,18 @@ export class WhatsappService {
     const data = body.data;
 
     if (!rawEvent) {
-      this.logger.warn(`Webhook without event for tenant ${tenantId}. Keys: ${Object.keys(body).join(', ')}`);
+      this.logger.warn(
+        `Webhook without event for tenant ${tenantId}. Keys: ${Object.keys(body).join(', ')}`,
+      );
       return;
     }
 
     // Normalize event name: Evolution v2 may send "messages.upsert" or "MESSAGES_UPSERT"
     const event = rawEvent.toUpperCase().replace(/\./g, '_');
 
-    this.logger.log(`Webhook received: raw="${rawEvent}" normalized="${event}" tenant=${tenantId}`);
+    this.logger.log(
+      `Webhook received: raw="${rawEvent}" normalized="${event}" tenant=${tenantId}`,
+    );
 
     await this.evolution.handleWebhook(tenantId, event, data);
   }
@@ -135,11 +151,18 @@ export class WhatsappService {
       chat.lastMessage = lastMsg?.content || '';
     }
 
-    this.logger.log(`getChats for tenant ${tenantId}: found ${chats.length} chats`);
+    this.logger.log(
+      `getChats for tenant ${tenantId}: found ${chats.length} chats`,
+    );
     return chats;
   }
 
-  async getChatMessages(tenantId: string, remotePhone: string, page = 1, limit = 50) {
+  async getChatMessages(
+    tenantId: string,
+    remotePhone: string,
+    page = 1,
+    limit = 50,
+  ) {
     const clean = remotePhone.replace(/\D/g, '');
 
     const [messages, total] = await this.messageRepo.findAndCount({

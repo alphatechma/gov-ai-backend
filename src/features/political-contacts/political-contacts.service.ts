@@ -6,7 +6,9 @@ import { TenantAwareService } from '../../shared/base/tenant-aware.service';
 
 @Injectable()
 export class PoliticalContactsService extends TenantAwareService<PoliticalContact> {
-  constructor(@InjectRepository(PoliticalContact) repo: Repository<PoliticalContact>) {
+  constructor(
+    @InjectRepository(PoliticalContact) repo: Repository<PoliticalContact>,
+  ) {
     super(repo);
   }
 }

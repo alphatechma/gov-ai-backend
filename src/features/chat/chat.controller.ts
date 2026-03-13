@@ -41,10 +41,7 @@ export class ChatController {
   }
 
   @Get('conversations/:id')
-  getConversation(
-    @Req() req: any,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  getConversation(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
     return this.chatService.getConversation(req.tenantId, id, req.user.id);
   }
 
@@ -83,10 +80,7 @@ export class ChatController {
   }
 
   @Delete('conversations/:id')
-  deleteConversation(
-    @Req() req: any,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  deleteConversation(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
     return this.chatService.deleteConversation(req.tenantId, id, req.user.id);
   }
 
@@ -122,10 +116,7 @@ export class ChatController {
   }
 
   @Post('conversations/:id/read')
-  markAsRead(
-    @Req() req: any,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  markAsRead(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
     return this.chatService.markAsRead(req.tenantId, id, req.user.id);
   }
 
@@ -158,10 +149,7 @@ export class ChatController {
   }
 
   @Post('conversations/:id/mute')
-  toggleMute(
-    @Req() req: any,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  toggleMute(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
     return this.chatService.toggleMute(req.tenantId, id, req.user.id);
   }
 }

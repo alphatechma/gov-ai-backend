@@ -20,56 +20,230 @@ interface CandidateData {
 
 const vereadorData: CandidateData[] = [
   // REPUBLICANOS (10)
-  { candidateNumber: '10777', candidateName: 'DANIEL JACKSON ARAUJO DE SOUZA', partyAcronym: 'REPUBLICANOS', votes: 2276, situation: 'Eleito por QP' },
-  { candidateNumber: '10369', candidateName: 'RENATO BITTENCOURT DOS SANTOS', partyAcronym: 'REPUBLICANOS', votes: 2045, situation: 'Eleito por QP' },
-  { candidateNumber: '10456', candidateName: 'TAYLON OLIVEIRA DE ANDRADES', partyAcronym: 'REPUBLICANOS', votes: 1533, situation: 'Eleito por média' },
-  { candidateNumber: '10111', candidateName: 'JOSE ALVES DE SOUZA NETO', partyAcronym: 'REPUBLICANOS', votes: 1493, situation: '1º Suplente' },
-  { candidateNumber: '10222', candidateName: 'JULIO CESAR DA CUNHA SOARES', partyAcronym: 'REPUBLICANOS', votes: 1245, situation: '2º Suplente' },
-  { candidateNumber: '10123', candidateName: 'BERNARDO DE CLARAVAL NASCIMENTO ROCHA', partyAcronym: 'REPUBLICANOS', votes: 1080, situation: '3º Suplente' },
-  { candidateNumber: '10999', candidateName: 'ANTONIO MARCOS DO NASCIMENTO OLIVEIRA', partyAcronym: 'REPUBLICANOS', votes: 959, situation: '4º Suplente' },
+  {
+    candidateNumber: '10777',
+    candidateName: 'DANIEL JACKSON ARAUJO DE SOUZA',
+    partyAcronym: 'REPUBLICANOS',
+    votes: 2276,
+    situation: 'Eleito por QP',
+  },
+  {
+    candidateNumber: '10369',
+    candidateName: 'RENATO BITTENCOURT DOS SANTOS',
+    partyAcronym: 'REPUBLICANOS',
+    votes: 2045,
+    situation: 'Eleito por QP',
+  },
+  {
+    candidateNumber: '10456',
+    candidateName: 'TAYLON OLIVEIRA DE ANDRADES',
+    partyAcronym: 'REPUBLICANOS',
+    votes: 1533,
+    situation: 'Eleito por média',
+  },
+  {
+    candidateNumber: '10111',
+    candidateName: 'JOSE ALVES DE SOUZA NETO',
+    partyAcronym: 'REPUBLICANOS',
+    votes: 1493,
+    situation: '1º Suplente',
+  },
+  {
+    candidateNumber: '10222',
+    candidateName: 'JULIO CESAR DA CUNHA SOARES',
+    partyAcronym: 'REPUBLICANOS',
+    votes: 1245,
+    situation: '2º Suplente',
+  },
+  {
+    candidateNumber: '10123',
+    candidateName: 'BERNARDO DE CLARAVAL NASCIMENTO ROCHA',
+    partyAcronym: 'REPUBLICANOS',
+    votes: 1080,
+    situation: '3º Suplente',
+  },
+  {
+    candidateNumber: '10999',
+    candidateName: 'ANTONIO MARCOS DO NASCIMENTO OLIVEIRA',
+    partyAcronym: 'REPUBLICANOS',
+    votes: 959,
+    situation: '4º Suplente',
+  },
 
   // PP (11)
-  { candidateNumber: '11678', candidateName: 'JOAO BATISTA DOS SANTOS FILHO', partyAcronym: 'PP', votes: 2192, situation: 'Eleito por QP' },
-  { candidateNumber: '11456', candidateName: 'FRANCISCA DAS CHAGAS CASTELO BRANCO NETA', partyAcronym: 'PP', votes: 1787, situation: 'Eleito por QP' },
-  { candidateNumber: '11000', candidateName: 'EDCARLOS GOUVEIA DA SILVA', partyAcronym: 'PP', votes: 1593, situation: 'Eleito por média' },
-  { candidateNumber: '11123', candidateName: 'FRANCISCO ASTROGILDO FERNANDES LIMA', partyAcronym: 'PP', votes: 1396, situation: '1º Suplente' },
+  {
+    candidateNumber: '11678',
+    candidateName: 'JOAO BATISTA DOS SANTOS FILHO',
+    partyAcronym: 'PP',
+    votes: 2192,
+    situation: 'Eleito por QP',
+  },
+  {
+    candidateNumber: '11456',
+    candidateName: 'FRANCISCA DAS CHAGAS CASTELO BRANCO NETA',
+    partyAcronym: 'PP',
+    votes: 1787,
+    situation: 'Eleito por QP',
+  },
+  {
+    candidateNumber: '11000',
+    candidateName: 'EDCARLOS GOUVEIA DA SILVA',
+    partyAcronym: 'PP',
+    votes: 1593,
+    situation: 'Eleito por média',
+  },
+  {
+    candidateNumber: '11123',
+    candidateName: 'FRANCISCO ASTROGILDO FERNANDES LIMA',
+    partyAcronym: 'PP',
+    votes: 1396,
+    situation: '1º Suplente',
+  },
 
   // MDB (15)
-  { candidateNumber: '15222', candidateName: 'JOSE ALVES DE SOUSA FILHO', partyAcronym: 'MDB', votes: 2086, situation: 'Eleito por QP' },
-  { candidateNumber: '15130', candidateName: 'MARCOS SAMARONNE FERREIRA DE OLIVEIRA', partyAcronym: 'MDB', votes: 2032, situation: 'Eleito por QP' },
-  { candidateNumber: '15111', candidateName: 'JOAO BATISTA OLIVEIRA DOS SANTOS', partyAcronym: 'MDB', votes: 1970, situation: 'Eleito por QP' },
-  { candidateNumber: '15000', candidateName: 'CARLSON AUGUSTO CORNELIO PESSOA', partyAcronym: 'MDB', votes: 1541, situation: '1º Suplente' },
+  {
+    candidateNumber: '15222',
+    candidateName: 'JOSE ALVES DE SOUSA FILHO',
+    partyAcronym: 'MDB',
+    votes: 2086,
+    situation: 'Eleito por QP',
+  },
+  {
+    candidateNumber: '15130',
+    candidateName: 'MARCOS SAMARONNE FERREIRA DE OLIVEIRA',
+    partyAcronym: 'MDB',
+    votes: 2032,
+    situation: 'Eleito por QP',
+  },
+  {
+    candidateNumber: '15111',
+    candidateName: 'JOAO BATISTA OLIVEIRA DOS SANTOS',
+    partyAcronym: 'MDB',
+    votes: 1970,
+    situation: 'Eleito por QP',
+  },
+  {
+    candidateNumber: '15000',
+    candidateName: 'CARLSON AUGUSTO CORNELIO PESSOA',
+    partyAcronym: 'MDB',
+    votes: 1541,
+    situation: '1º Suplente',
+  },
 
   // PODEMOS (20)
-  { candidateNumber: '20000', candidateName: 'MAKSUEL JOSE GOMES BRANDAO', partyAcronym: 'PODE', votes: 1120, situation: 'Eleito por QP' },
-  { candidateNumber: '20123', candidateName: 'JOSE MARQUES DE SOUSA JUNIOR', partyAcronym: 'PODE', votes: 738, situation: '1º Suplente' },
+  {
+    candidateNumber: '20000',
+    candidateName: 'MAKSUEL JOSE GOMES BRANDAO',
+    partyAcronym: 'PODE',
+    votes: 1120,
+    situation: 'Eleito por QP',
+  },
+  {
+    candidateNumber: '20123',
+    candidateName: 'JOSE MARQUES DE SOUSA JUNIOR',
+    partyAcronym: 'PODE',
+    votes: 738,
+    situation: '1º Suplente',
+  },
 
   // PL (22)
-  { candidateNumber: '22322', candidateName: 'FRANCISCO JOSE DE OLIVEIRA PEREIRA', partyAcronym: 'PL', votes: 1375, situation: 'Eleito por QP' },
-  { candidateNumber: '22456', candidateName: 'BRUNO VASCONCELOS CUNHA', partyAcronym: 'PL', votes: 1047, situation: 'Eleito por média' },
-  { candidateNumber: '22333', candidateName: 'THICIANO RIBEIRO DA CRUZ', partyAcronym: 'PL', votes: 986, situation: '1º Suplente' },
+  {
+    candidateNumber: '22322',
+    candidateName: 'FRANCISCO JOSE DE OLIVEIRA PEREIRA',
+    partyAcronym: 'PL',
+    votes: 1375,
+    situation: 'Eleito por QP',
+  },
+  {
+    candidateNumber: '22456',
+    candidateName: 'BRUNO VASCONCELOS CUNHA',
+    partyAcronym: 'PL',
+    votes: 1047,
+    situation: 'Eleito por média',
+  },
+  {
+    candidateNumber: '22333',
+    candidateName: 'THICIANO RIBEIRO DA CRUZ',
+    partyAcronym: 'PL',
+    votes: 986,
+    situation: '1º Suplente',
+  },
 
   // UNIÃO (44)
-  { candidateNumber: '44123', candidateName: 'ANTONIO JOSE BATISTA FILHO', partyAcronym: 'UNIAO', votes: 2420, situation: 'Eleito por QP' },
-  { candidateNumber: '44456', candidateName: 'VALERIO AQUINO GOMES', partyAcronym: 'UNIAO', votes: 1640, situation: 'Eleito por média' },
+  {
+    candidateNumber: '44123',
+    candidateName: 'ANTONIO JOSE BATISTA FILHO',
+    partyAcronym: 'UNIAO',
+    votes: 2420,
+    situation: 'Eleito por QP',
+  },
+  {
+    candidateNumber: '44456',
+    candidateName: 'VALERIO AQUINO GOMES',
+    partyAcronym: 'UNIAO',
+    votes: 1640,
+    situation: 'Eleito por média',
+  },
 
   // PT (13)
-  { candidateNumber: '13123', candidateName: 'MARCOS ANTONIO DE CARVALHO', partyAcronym: 'PT', votes: 1980, situation: 'Eleito por QP' },
+  {
+    candidateNumber: '13123',
+    candidateName: 'MARCOS ANTONIO DE CARVALHO',
+    partyAcronym: 'PT',
+    votes: 1980,
+    situation: 'Eleito por QP',
+  },
 
   // PCdoB (65)
-  { candidateNumber: '65000', candidateName: 'RAIMUNDO BANDEIRA DA SILVA', partyAcronym: 'PCdoB', votes: 1750, situation: 'Eleito por QP' },
+  {
+    candidateNumber: '65000',
+    candidateName: 'RAIMUNDO BANDEIRA DA SILVA',
+    partyAcronym: 'PCdoB',
+    votes: 1750,
+    situation: 'Eleito por QP',
+  },
 
   // PSOL (50)
-  { candidateNumber: '50123', candidateName: 'MARIA DAS GRACAS OLIVEIRA', partyAcronym: 'PSOL', votes: 2100, situation: 'Eleito por QP' },
+  {
+    candidateNumber: '50123',
+    candidateName: 'MARIA DAS GRACAS OLIVEIRA',
+    partyAcronym: 'PSOL',
+    votes: 2100,
+    situation: 'Eleito por QP',
+  },
 ];
 
 // ── Dados de Prefeito - Parnaíba/PI 2024 ──
 
 const prefeitoData: CandidateData[] = [
-  { candidateNumber: '11', candidateName: 'FRANCISCO EMANUEL CUNHA DE BRITO', partyAcronym: 'PP', votes: 54393, situation: 'Eleito' },
-  { candidateNumber: '15', candidateName: 'JOSE HELIO DE CARVALHO OLIVEIRA', partyAcronym: 'MDB', votes: 27741, situation: 'Não eleito' },
-  { candidateNumber: '55', candidateName: 'JOSE HAMILTON FURTADO CASTELLO BRANCO', partyAcronym: 'PSD', votes: 9692, situation: 'Não eleito' },
-  { candidateNumber: '27', candidateName: 'ERIVELTON FONTENELE', partyAcronym: 'DC', votes: 222, situation: 'Não eleito' },
+  {
+    candidateNumber: '11',
+    candidateName: 'FRANCISCO EMANUEL CUNHA DE BRITO',
+    partyAcronym: 'PP',
+    votes: 54393,
+    situation: 'Eleito',
+  },
+  {
+    candidateNumber: '15',
+    candidateName: 'JOSE HELIO DE CARVALHO OLIVEIRA',
+    partyAcronym: 'MDB',
+    votes: 27741,
+    situation: 'Não eleito',
+  },
+  {
+    candidateNumber: '55',
+    candidateName: 'JOSE HAMILTON FURTADO CASTELLO BRANCO',
+    partyAcronym: 'PSD',
+    votes: 9692,
+    situation: 'Não eleito',
+  },
+  {
+    candidateNumber: '27',
+    candidateName: 'ERIVELTON FONTENELE',
+    partyAcronym: 'DC',
+    votes: 222,
+    situation: 'Não eleito',
+  },
 ];
 
 async function seedElectionData() {
@@ -107,7 +281,9 @@ async function seedElectionData() {
   const TENANT_CANDIDATE_NAME = 'GABINETE ALPHA';
 
   // Limpar dados anteriores do tenant
-  await dataSource.query('DELETE FROM election_results WHERE "tenantId" = $1', [tenant.id]);
+  await dataSource.query('DELETE FROM election_results WHERE "tenantId" = $1', [
+    tenant.id,
+  ]);
   console.log('Dados anteriores removidos\n');
 
   const electionYear = 2024;
@@ -132,31 +308,43 @@ async function seedElectionData() {
   const allCandidates = [tenantCandidate, ...vereadorData, ...prefeitoData];
 
   for (const candidate of allCandidates) {
-    let remainingVotes = candidate.votes;
+    const remainingVotes = candidate.votes;
     const isTenantCandidate = candidate.candidateName === TENANT_CANDIDATE_NAME;
 
     for (let zi = 0; zi < zones.length; zi++) {
       const zone = zones[zi];
 
       // Distribuir votos: 55% zona principal, 45% zona secundária
-      const zoneVotes = zi === 0
-        ? Math.floor(remainingVotes * 0.55)
-        : remainingVotes - Math.floor(remainingVotes * 0.55);
+      const zoneVotes =
+        zi === 0
+          ? Math.floor(remainingVotes * 0.55)
+          : remainingVotes - Math.floor(remainingVotes * 0.55);
 
       // Distribuir pelas seções da zona
-      const numSections = Math.floor(sectionsPerZone * (0.3 + Math.random() * 0.4));
+      const numSections = Math.floor(
+        sectionsPerZone * (0.3 + Math.random() * 0.4),
+      );
       let sectionRemaining = zoneVotes;
 
       for (let s = 1; s <= numSections && sectionRemaining > 0; s++) {
-        const sectionVotes = s === numSections
-          ? sectionRemaining
-          : Math.max(1, Math.floor(sectionRemaining / (numSections - s + 1) * (0.5 + Math.random())));
+        const sectionVotes =
+          s === numSections
+            ? sectionRemaining
+            : Math.max(
+                1,
+                Math.floor(
+                  (sectionRemaining / (numSections - s + 1)) *
+                    (0.5 + Math.random()),
+                ),
+              );
 
         const actualVotes = Math.min(sectionVotes, sectionRemaining);
         if (actualVotes <= 0) continue;
 
         // totalVotes da seção (todos os candidatos somados - estimativa)
-        const totalVotesSection = Math.floor(actualVotes / (0.01 + Math.random() * 0.08));
+        const totalVotesSection = Math.floor(
+          actualVotes / (0.01 + Math.random() * 0.08),
+        );
         const section = String(s).padStart(4, '0');
 
         const escapeSql = (str: string) => str.replace(/'/g, "''");
@@ -177,7 +365,9 @@ async function seedElectionData() {
       }
     }
 
-    console.log(`  ${candidate.candidateNumber} - ${candidate.candidateName}: ${candidate.votes.toLocaleString('pt-BR')} votos ${isTenantCandidate ? '(TENANT)' : ''}`);
+    console.log(
+      `  ${candidate.candidateNumber} - ${candidate.candidateName}: ${candidate.votes.toLocaleString('pt-BR')} votos ${isTenantCandidate ? '(TENANT)' : ''}`,
+    );
   }
 
   // Inserir restante
@@ -188,7 +378,8 @@ async function seedElectionData() {
   console.log(`\nSeed concluido! ${totalRecords} registros inseridos`);
   console.log('\nResumo:');
 
-  const summary = await dataSource.query(`
+  const summary = await dataSource.query(
+    `
     SELECT
       COUNT(*) as total,
       COUNT(*) FILTER (WHERE "isTenantCandidate" = true) as tenant_rows,
@@ -198,27 +389,36 @@ async function seedElectionData() {
       SUM("candidateVotes") as total_votes
     FROM election_results
     WHERE "tenantId" = $1
-  `, [tenant.id]);
+  `,
+    [tenant.id],
+  );
 
   console.log(`  Total registros: ${summary[0].total}`);
   console.log(`  Registros do tenant: ${summary[0].tenant_rows}`);
   console.log(`  Candidatos: ${summary[0].candidates}`);
   console.log(`  Zonas: ${summary[0].zones}`);
   console.log(`  Secoes: ${summary[0].sections}`);
-  console.log(`  Total votos: ${parseInt(summary[0].total_votes).toLocaleString('pt-BR')}`);
+  console.log(
+    `  Total votos: ${parseInt(summary[0].total_votes).toLocaleString('pt-BR')}`,
+  );
 
   // Partidos
-  const parties = await dataSource.query(`
+  const parties = await dataSource.query(
+    `
     SELECT "candidateParty", COUNT(DISTINCT "candidateName") as candidates, SUM("candidateVotes") as votes
     FROM election_results
     WHERE "tenantId" = $1
     GROUP BY "candidateParty"
     ORDER BY votes DESC
-  `, [tenant.id]);
+  `,
+    [tenant.id],
+  );
 
   console.log('\nPor partido:');
   for (const p of parties) {
-    console.log(`  ${p.candidateParty}: ${p.candidates} candidatos, ${parseInt(p.votes).toLocaleString('pt-BR')} votos`);
+    console.log(
+      `  ${p.candidateParty}: ${p.candidates} candidatos, ${parseInt(p.votes).toLocaleString('pt-BR')} votos`,
+    );
   }
 
   await dataSource.destroy();
@@ -234,7 +434,7 @@ async function insertBatch(dataSource: DataSource, batch: string[]) {
   `);
 }
 
-seedElectionData().catch(err => {
+seedElectionData().catch((err) => {
   console.error('Erro:', err);
   process.exit(1);
 });

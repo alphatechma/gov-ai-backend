@@ -6,6 +6,9 @@ import { DataSource } from 'typeorm';
 import { getDatabaseConfig } from './config/database.config';
 import { runSeed } from './config/seed';
 
+// Shared
+import { StorageModule } from './shared/storage/storage.module';
+
 // Core
 import { AuthModule } from './core/auth/auth.module';
 import { TenantsModule } from './core/tenants/tenants.module';
@@ -50,6 +53,9 @@ import { WhatsappModule } from './features/whatsapp/whatsapp.module';
       { name: 'short', ttl: 1000, limit: 10 },
       { name: 'long', ttl: 60000, limit: 100 },
     ]),
+
+    // Shared
+    StorageModule,
 
     // Core
     AuthModule,

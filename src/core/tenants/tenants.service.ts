@@ -124,9 +124,7 @@ export class TenantsService {
     return { deleted };
   }
 
-  async getModuleDataCounts(
-    tenantId: string,
-  ): Promise<Record<string, number>> {
+  async getModuleDataCounts(tenantId: string): Promise<Record<string, number>> {
     await this.findOne(tenantId);
 
     const counts: Record<string, number> = {};

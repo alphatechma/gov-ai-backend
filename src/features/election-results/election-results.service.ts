@@ -26,13 +26,38 @@ function normalizeStr(s: string): string {
 }
 
 const PARTY_MAP: Record<string, string> = {
-  '10': 'REPUBLICANOS', '11': 'PP', '12': 'PDT', '13': 'PT', '14': 'PTB',
-  '15': 'MDB', '16': 'PSTU', '17': 'PSL', '18': 'REDE', '19': 'PODE',
-  '20': 'PODE', '21': 'PCB', '22': 'PL', '23': 'CIDADANIA', '25': 'PRD',
-  '27': 'DC', '28': 'PRTB', '29': 'PCO', '30': 'NOVO', '33': 'PMB',
-  '35': 'PMB', '36': 'AGIR', '40': 'PSB', '43': 'PV', '44': 'UNIAO',
-  '45': 'PSDB', '50': 'PSOL', '55': 'PSD', '65': 'PCdoB', '70': 'AVANTE',
-  '77': 'SOLIDARIEDADE', '80': 'UP',
+  '10': 'REPUBLICANOS',
+  '11': 'PP',
+  '12': 'PDT',
+  '13': 'PT',
+  '14': 'PTB',
+  '15': 'MDB',
+  '16': 'PSTU',
+  '17': 'PSL',
+  '18': 'REDE',
+  '19': 'PODE',
+  '20': 'PODE',
+  '21': 'PCB',
+  '22': 'PL',
+  '23': 'CIDADANIA',
+  '25': 'PRD',
+  '27': 'DC',
+  '28': 'PRTB',
+  '29': 'PCO',
+  '30': 'NOVO',
+  '33': 'PMB',
+  '35': 'PMB',
+  '36': 'AGIR',
+  '40': 'PSB',
+  '43': 'PV',
+  '44': 'UNIAO',
+  '45': 'PSDB',
+  '50': 'PSOL',
+  '55': 'PSD',
+  '65': 'PCdoB',
+  '70': 'AVANTE',
+  '77': 'SOLIDARIEDADE',
+  '80': 'UP',
 };
 
 function partyFromNumber(candidateNumber: string): string | null {
@@ -55,7 +80,12 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
   }
 
   // ── Summary ──
-  async getSummary(tenantId: string, tenant: Tenant, queryYear?: number, round?: number) {
+  async getSummary(
+    tenantId: string,
+    tenant: Tenant,
+    queryYear?: number,
+    round?: number,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
     const params: any[] = [tenantId, year];
     let roundClause = '';
@@ -87,12 +117,20 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       totalSections: parseInt(totals.totalSections, 10),
       totalCities: parseInt(totals.totalCities, 10),
       totalCandidates: parseInt(totals.totalCandidates, 10),
-      votePercentage: totalVotes > 0 ? Math.round((totalCandidateVotes / totalVotes) * 1000) / 10 : 0,
+      votePercentage:
+        totalVotes > 0
+          ? Math.round((totalCandidateVotes / totalVotes) * 1000) / 10
+          : 0,
     };
   }
 
   // ── By Party ──
-  async getByParty(tenantId: string, tenant: Tenant, queryYear?: number, round?: number) {
+  async getByParty(
+    tenantId: string,
+    tenant: Tenant,
+    queryYear?: number,
+    round?: number,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
     const params: any[] = [tenantId, year];
     let roundClause = '';
@@ -101,22 +139,32 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       params.push(round);
     }
 
-    return this.dataSource.query(
-      `SELECT "candidateParty" as party, SUM("candidateVotes") as votes, COUNT(DISTINCT "candidateName") as candidates
+    return this.dataSource
+      .query(
+        `SELECT "candidateParty" as party, SUM("candidateVotes") as votes, COUNT(DISTINCT "candidateName") as candidates
       FROM "election_results"
       WHERE "tenantId" = $1 AND "electionYear" = $2 AND "candidateParty" IS NOT NULL${roundClause}
       GROUP BY "candidateParty"
       ORDER BY votes DESC`,
-      params,
-    ).then(rows => rows.map((r: any) => ({
-      party: r.party,
-      votes: parseInt(r.votes, 10),
-      candidates: parseInt(r.candidates, 10),
-    })));
+        params,
+      )
+      .then((rows) =>
+        rows.map((r: any) => ({
+          party: r.party,
+          votes: parseInt(r.votes, 10),
+          candidates: parseInt(r.candidates, 10),
+        })),
+      );
   }
 
   // ── Ranking ──
-  async getRanking(tenantId: string, tenant: Tenant, queryYear?: number, round?: number, limit: number = 10) {
+  async getRanking(
+    tenantId: string,
+    tenant: Tenant,
+    queryYear?: number,
+    round?: number,
+    limit: number = 10,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
     const params: any[] = [tenantId, year];
     let roundClause = '';
@@ -125,48 +173,62 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       params.push(round);
     }
 
-    return this.dataSource.query(
-      `SELECT "candidateName", "candidateNumber", "candidateParty", "isTenantCandidate",
+    return this.dataSource
+      .query(
+        `SELECT "candidateName", "candidateNumber", "candidateParty", "isTenantCandidate",
         SUM("candidateVotes") as votes
       FROM "election_results"
       WHERE "tenantId" = $1 AND "electionYear" = $2${roundClause}
       GROUP BY "candidateName", "candidateNumber", "candidateParty", "isTenantCandidate"
       ORDER BY votes DESC
       LIMIT ${limit}`,
-      params,
-    ).then(rows => rows.map((r: any) => ({
-      candidateName: r.candidateName,
-      candidateNumber: r.candidateNumber,
-      candidateParty: r.candidateParty,
-      isTenantCandidate: r.isTenantCandidate,
-      votes: parseInt(r.votes, 10),
-    })));
+        params,
+      )
+      .then((rows) =>
+        rows.map((r: any) => ({
+          candidateName: r.candidateName,
+          candidateNumber: r.candidateNumber,
+          candidateParty: r.candidateParty,
+          isTenantCandidate: r.isTenantCandidate,
+          votes: parseInt(r.votes, 10),
+        })),
+      );
   }
 
   // ── Candidates list ──
   async getCandidates(tenantId: string, tenant: Tenant, queryYear?: number) {
     const year = this.yearFilter(tenant, queryYear);
 
-    return this.dataSource.query(
-      `SELECT "candidateName", "candidateNumber", "candidateParty", "isTenantCandidate",
+    return this.dataSource
+      .query(
+        `SELECT "candidateName", "candidateNumber", "candidateParty", "isTenantCandidate",
         SUM("candidateVotes") as "totalVotes"
       FROM "election_results"
       WHERE "tenantId" = $1 AND "electionYear" = $2
       GROUP BY "candidateName", "candidateNumber", "candidateParty", "isTenantCandidate"
       ORDER BY "totalVotes" DESC`,
-      [tenantId, year],
-    ).then(rows => rows.map((r: any, i: number) => ({
-      rank: i + 1,
-      candidateName: r.candidateName,
-      candidateNumber: r.candidateNumber,
-      candidateParty: r.candidateParty,
-      isTenantCandidate: r.isTenantCandidate,
-      totalVotes: parseInt(r.totalVotes, 10),
-    })));
+        [tenantId, year],
+      )
+      .then((rows) =>
+        rows.map((r: any, i: number) => ({
+          rank: i + 1,
+          candidateName: r.candidateName,
+          candidateNumber: r.candidateNumber,
+          candidateParty: r.candidateParty,
+          isTenantCandidate: r.isTenantCandidate,
+          totalVotes: parseInt(r.totalVotes, 10),
+        })),
+      );
   }
 
   // ── By City ──
-  async getByCity(tenantId: string, tenant: Tenant, queryYear?: number, round?: number, candidateName?: string) {
+  async getByCity(
+    tenantId: string,
+    tenant: Tenant,
+    queryYear?: number,
+    round?: number,
+    candidateName?: string,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
     const params: any[] = [tenantId, year];
     let extraClause = '';
@@ -191,7 +253,10 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       params,
     );
 
-    const grandTotal = rows.reduce((sum: number, r: any) => sum + parseInt(r.votes, 10), 0);
+    const grandTotal = rows.reduce(
+      (sum: number, r: any) => sum + parseInt(r.votes, 10),
+      0,
+    );
 
     return rows.map((r: any) => {
       const votes = parseInt(r.votes, 10);
@@ -201,13 +266,19 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
         totalVotes: parseInt(r.totalVotes, 10),
         zonesCount: parseInt(r.zonesCount, 10),
         sectionsCount: parseInt(r.sectionsCount, 10),
-        percentage: grandTotal > 0 ? Math.round((votes / grandTotal) * 1000) / 10 : 0,
+        percentage:
+          grandTotal > 0 ? Math.round((votes / grandTotal) * 1000) / 10 : 0,
       };
     });
   }
 
   // ── By Zone ──
-  async getByZone(tenantId: string, tenant: Tenant, queryYear?: number, round?: number) {
+  async getByZone(
+    tenantId: string,
+    tenant: Tenant,
+    queryYear?: number,
+    round?: number,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
     const params: any[] = [tenantId, year];
     let roundClause = '';
@@ -216,38 +287,53 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       params.push(round);
     }
 
-    return this.dataSource.query(
-      `SELECT "zone", SUM("candidateVotes") as votes, SUM("totalVotes") as "totalVotes",
+    return this.dataSource
+      .query(
+        `SELECT "zone", SUM("candidateVotes") as votes, SUM("totalVotes") as "totalVotes",
         COUNT(DISTINCT "section") as sections
       FROM "election_results"
       WHERE "tenantId" = $1 AND "electionYear" = $2 AND "isTenantCandidate" = true${roundClause}
       GROUP BY "zone"
       ORDER BY "zone"`,
-      params,
-    ).then(rows => rows.map((r: any) => ({
-      zone: r.zone,
-      votes: parseInt(r.votes, 10),
-      totalVotes: parseInt(r.totalVotes, 10),
-      sections: parseInt(r.sections, 10),
-      percentage: parseInt(r.totalVotes, 10) > 0
-        ? Math.round((parseInt(r.votes, 10) / parseInt(r.totalVotes, 10)) * 1000) / 10
-        : 0,
-    })));
+        params,
+      )
+      .then((rows) =>
+        rows.map((r: any) => ({
+          zone: r.zone,
+          votes: parseInt(r.votes, 10),
+          totalVotes: parseInt(r.totalVotes, 10),
+          sections: parseInt(r.sections, 10),
+          percentage:
+            parseInt(r.totalVotes, 10) > 0
+              ? Math.round(
+                  (parseInt(r.votes, 10) / parseInt(r.totalVotes, 10)) * 1000,
+                ) / 10
+              : 0,
+        })),
+      );
   }
 
   // ── Zones list ──
   async getZones(tenantId: string, tenant: Tenant, queryYear?: number) {
     const year = this.yearFilter(tenant, queryYear);
-    return this.dataSource.query(
-      `SELECT DISTINCT "zone" FROM "election_results"
+    return this.dataSource
+      .query(
+        `SELECT DISTINCT "zone" FROM "election_results"
       WHERE "tenantId" = $1 AND "electionYear" = $2
       ORDER BY "zone"`,
-      [tenantId, year],
-    ).then(rows => rows.map((r: any) => r.zone));
+        [tenantId, year],
+      )
+      .then((rows) => rows.map((r: any) => r.zone));
   }
 
   // ── By Section ──
-  async getBySection(tenantId: string, tenant: Tenant, queryYear?: number, round?: number, zone?: string) {
+  async getBySection(
+    tenantId: string,
+    tenant: Tenant,
+    queryYear?: number,
+    round?: number,
+    zone?: string,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
     const params: any[] = [tenantId, year];
     let extraClause = '';
@@ -260,27 +346,40 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       params.push(zone);
     }
 
-    return this.dataSource.query(
-      `SELECT "zone", "section", "candidateVotes" as votes, "totalVotes", "candidateName", "isTenantCandidate"
+    return this.dataSource
+      .query(
+        `SELECT "zone", "section", "candidateVotes" as votes, "totalVotes", "candidateName", "isTenantCandidate"
       FROM "election_results"
       WHERE "tenantId" = $1 AND "electionYear" = $2${extraClause}
       ORDER BY "zone", "section"`,
-      params,
-    ).then(rows => rows.map((r: any) => ({
-      zone: r.zone,
-      section: r.section,
-      votes: parseInt(r.votes, 10),
-      totalVotes: parseInt(r.totalVotes, 10),
-      candidateName: r.candidateName,
-      isTenantCandidate: r.isTenantCandidate,
-      percentage: parseInt(r.totalVotes, 10) > 0
-        ? Math.round((parseInt(r.votes, 10) / parseInt(r.totalVotes, 10)) * 1000) / 10
-        : 0,
-    })));
+        params,
+      )
+      .then((rows) =>
+        rows.map((r: any) => ({
+          zone: r.zone,
+          section: r.section,
+          votes: parseInt(r.votes, 10),
+          totalVotes: parseInt(r.totalVotes, 10),
+          candidateName: r.candidateName,
+          isTenantCandidate: r.isTenantCandidate,
+          percentage:
+            parseInt(r.totalVotes, 10) > 0
+              ? Math.round(
+                  (parseInt(r.votes, 10) / parseInt(r.totalVotes, 10)) * 1000,
+                ) / 10
+              : 0,
+        })),
+      );
   }
 
   // ── Section Details (leader per section) ──
-  async getSectionDetails(tenantId: string, tenant: Tenant, queryYear?: number, round?: number, zone?: string) {
+  async getSectionDetails(
+    tenantId: string,
+    tenant: Tenant,
+    queryYear?: number,
+    round?: number,
+    zone?: string,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
     const params: any[] = [tenantId, year];
     let extraClause = '';
@@ -304,7 +403,10 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
     for (const r of rows) {
       const key = `${r.zone}-${r.section}`;
       const votes = parseInt(r.candidateVotes, 10) || 0;
-      if (!sectionsMap.has(key) || votes > sectionsMap.get(key).topCandidateVotes) {
+      if (
+        !sectionsMap.has(key) ||
+        votes > sectionsMap.get(key).topCandidateVotes
+      ) {
         sectionsMap.set(key, {
           zone: r.zone,
           section: r.section,
@@ -317,28 +419,46 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       }
     }
 
-    return Array.from(sectionsMap.values())
-      .sort((a, b) => (a.zone < b.zone ? -1 : a.zone > b.zone ? 1 : 0) || (a.section < b.section ? -1 : a.section > b.section ? 1 : 0));
+    return Array.from(sectionsMap.values()).sort(
+      (a, b) =>
+        (a.zone < b.zone ? -1 : a.zone > b.zone ? 1 : 0) ||
+        (a.section < b.section ? -1 : a.section > b.section ? 1 : 0),
+    );
   }
 
   // ── Candidate By Zone ──
-  async getCandidateByZone(tenantId: string, tenant: Tenant, candidateName: string, queryYear?: number) {
+  async getCandidateByZone(
+    tenantId: string,
+    tenant: Tenant,
+    candidateName: string,
+    queryYear?: number,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
-    return this.dataSource.query(
-      `SELECT "zone", SUM("candidateVotes") as votes
+    return this.dataSource
+      .query(
+        `SELECT "zone", SUM("candidateVotes") as votes
       FROM "election_results"
       WHERE "tenantId" = $1 AND "electionYear" = $2 AND "candidateName" = $3
       GROUP BY "zone"
       ORDER BY "zone"`,
-      [tenantId, year, candidateName],
-    ).then(rows => rows.map((r: any) => ({
-      zone: r.zone,
-      votes: parseInt(r.votes, 10),
-    })));
+        [tenantId, year, candidateName],
+      )
+      .then((rows) =>
+        rows.map((r: any) => ({
+          zone: r.zone,
+          votes: parseInt(r.votes, 10),
+        })),
+      );
   }
 
   // ── Candidate By Section ──
-  async getCandidateBySection(tenantId: string, tenant: Tenant, candidateName: string, queryYear?: number, zone?: string) {
+  async getCandidateBySection(
+    tenantId: string,
+    tenant: Tenant,
+    candidateName: string,
+    queryYear?: number,
+    zone?: string,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
     const params: any[] = [tenantId, year, candidateName];
     let extraClause = '';
@@ -347,22 +467,30 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       params.push(zone);
     }
 
-    return this.dataSource.query(
-      `SELECT "zone", "section", "candidateVotes" as votes, "totalVotes"
+    return this.dataSource
+      .query(
+        `SELECT "zone", "section", "candidateVotes" as votes, "totalVotes"
       FROM "election_results"
       WHERE "tenantId" = $1 AND "electionYear" = $2 AND "candidateName" = $3${extraClause}
       ORDER BY "zone", "section"`,
-      params,
-    ).then(rows => rows.map((r: any) => ({
-      zone: r.zone,
-      section: r.section,
-      votes: parseInt(r.votes, 10),
-      totalVotes: parseInt(r.totalVotes, 10),
-    })));
+        params,
+      )
+      .then((rows) =>
+        rows.map((r: any) => ({
+          zone: r.zone,
+          section: r.section,
+          votes: parseInt(r.votes, 10),
+          totalVotes: parseInt(r.totalVotes, 10),
+        })),
+      );
   }
 
   // ── By Neighborhood ──
-  async getByNeighborhood(tenantId: string, tenant: Tenant, queryYear?: number) {
+  async getByNeighborhood(
+    tenantId: string,
+    tenant: Tenant,
+    queryYear?: number,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
     const rows = await this.dataSource.query(
       `SELECT "neighborhood", SUM("candidateVotes") as votes, SUM("totalVotes") as "totalVotes",
@@ -374,7 +502,10 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       [tenantId, year],
     );
 
-    const grandTotal = rows.reduce((sum: number, r: any) => sum + parseInt(r.votes, 10), 0);
+    const grandTotal = rows.reduce(
+      (sum: number, r: any) => sum + parseInt(r.votes, 10),
+      0,
+    );
 
     return rows.map((r: any) => {
       const votes = parseInt(r.votes, 10);
@@ -382,7 +513,8 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
         neighborhood: r.neighborhood,
         totalVotes: votes,
         sectionsCount: parseInt(r.sectionsCount, 10),
-        percentage: grandTotal > 0 ? Math.round((votes / grandTotal) * 1000) / 10 : 0,
+        percentage:
+          grandTotal > 0 ? Math.round((votes / grandTotal) * 1000) / 10 : 0,
       };
     });
   }
@@ -390,34 +522,45 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
   // ── Neighborhoods list ──
   async getNeighborhoods(tenantId: string, tenant: Tenant, queryYear?: number) {
     const year = this.yearFilter(tenant, queryYear);
-    return this.dataSource.query(
-      `SELECT DISTINCT "neighborhood" FROM "election_results"
+    return this.dataSource
+      .query(
+        `SELECT DISTINCT "neighborhood" FROM "election_results"
       WHERE "tenantId" = $1 AND "electionYear" = $2 AND "neighborhood" IS NOT NULL AND "neighborhood" != ''
       ORDER BY "neighborhood"`,
-      [tenantId, year],
-    ).then(rows => rows.map((r: any) => r.neighborhood));
+        [tenantId, year],
+      )
+      .then((rows) => rows.map((r: any) => r.neighborhood));
   }
 
   // ── Neighborhood Details ──
-  async getNeighborhoodDetails(tenantId: string, tenant: Tenant, neighborhood: string, queryYear?: number) {
+  async getNeighborhoodDetails(
+    tenantId: string,
+    tenant: Tenant,
+    neighborhood: string,
+    queryYear?: number,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
 
-    const ranking = await this.dataSource.query(
-      `SELECT "candidateName", "candidateNumber", "candidateParty",
+    const ranking = await this.dataSource
+      .query(
+        `SELECT "candidateName", "candidateNumber", "candidateParty",
         SUM("candidateVotes") as "totalVotes"
       FROM "election_results"
       WHERE "tenantId" = $1 AND "electionYear" = $2 AND "neighborhood" = $3
       GROUP BY "candidateName", "candidateNumber", "candidateParty"
       ORDER BY "totalVotes" DESC
       LIMIT 10`,
-      [tenantId, year, neighborhood],
-    ).then(rows => rows.map((r: any, i: number) => ({
-      rank: i + 1,
-      name: r.candidateName,
-      number: r.candidateNumber,
-      party: r.candidateParty,
-      totalVotes: parseInt(r.totalVotes, 10),
-    })));
+        [tenantId, year, neighborhood],
+      )
+      .then((rows) =>
+        rows.map((r: any, i: number) => ({
+          rank: i + 1,
+          name: r.candidateName,
+          number: r.candidateNumber,
+          party: r.candidateParty,
+          totalVotes: parseInt(r.totalVotes, 10),
+        })),
+      );
 
     const [stats] = await this.dataSource.query(
       `SELECT SUM("candidateVotes") as "totalVotes", COUNT(DISTINCT "section") as "sectionsCount"
@@ -435,7 +578,12 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
   }
 
   // ── Insights (old-style: leaders, top candidate, concentration) ──
-  async getInsights(tenantId: string, tenant: Tenant, queryYear?: number, round?: number) {
+  async getInsights(
+    tenantId: string,
+    tenant: Tenant,
+    queryYear?: number,
+    round?: number,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
     const params: any[] = [tenantId, year];
     let roundClause = '';
@@ -445,27 +593,36 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
     }
 
     // Full ranking
-    const allCandidates = await this.dataSource.query(
-      `SELECT "candidateName", "candidateNumber", "candidateParty", "isTenantCandidate",
+    const allCandidates = await this.dataSource
+      .query(
+        `SELECT "candidateName", "candidateNumber", "candidateParty", "isTenantCandidate",
         SUM("candidateVotes") as votes
       FROM "election_results"
       WHERE "tenantId" = $1 AND "electionYear" = $2${roundClause}
       GROUP BY "candidateName", "candidateNumber", "candidateParty", "isTenantCandidate"
       ORDER BY votes DESC`,
-      params,
-    ).then(rows => rows.map((r: any) => ({
-      candidateName: r.candidateName,
-      candidateNumber: r.candidateNumber,
-      candidateParty: r.candidateParty,
-      isTenantCandidate: r.isTenantCandidate,
-      totalVotes: parseInt(r.votes, 10),
-    })));
+        params,
+      )
+      .then((rows) =>
+        rows.map((r: any) => ({
+          candidateName: r.candidateName,
+          candidateNumber: r.candidateNumber,
+          candidateParty: r.candidateParty,
+          isTenantCandidate: r.isTenantCandidate,
+          totalVotes: parseInt(r.votes, 10),
+        })),
+      );
 
     const topCandidate = allCandidates[0] || null;
     const runnerUp = allCandidates[1] || null;
-    const voteDifference = topCandidate && runnerUp ? topCandidate.totalVotes - runnerUp.totalVotes : 0;
-    const percentageDifference = runnerUp?.totalVotes > 0
-      ? Math.round((voteDifference / runnerUp.totalVotes) * 1000) / 10 : 0;
+    const voteDifference =
+      topCandidate && runnerUp
+        ? topCandidate.totalVotes - runnerUp.totalVotes
+        : 0;
+    const percentageDifference =
+      runnerUp?.totalVotes > 0
+        ? Math.round((voteDifference / runnerUp.totalVotes) * 1000) / 10
+        : 0;
 
     // Top/bottom sections
     const sections = await this.dataSource.query(
@@ -476,7 +633,13 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       ORDER BY votes DESC`,
       params,
     );
-    const topSection = sections[0] ? { zone: sections[0].zone, section: sections[0].section, votes: parseInt(sections[0].votes, 10) } : null;
+    const topSection = sections[0]
+      ? {
+          zone: sections[0].zone,
+          section: sections[0].section,
+          votes: parseInt(sections[0].votes, 10),
+        }
+      : null;
 
     // Leaders by zone
     const zones = await this.getZones(tenantId, tenant, queryYear);
@@ -493,14 +656,25 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
         [tenantId, year, zone],
       );
       if (leader) {
-        leadersByZone.push({ zone, leader: { ...leader, votes: parseInt(leader.votes, 10) } });
+        leadersByZone.push({
+          zone,
+          leader: { ...leader, votes: parseInt(leader.votes, 10) },
+        });
       }
     }
 
     // Concentration
-    const totalVotesAll = allCandidates.reduce((s: number, c: any) => s + c.totalVotes, 0);
-    const top3Votes = allCandidates.slice(0, 3).reduce((s: number, c: any) => s + c.totalVotes, 0);
-    const concentrationRate = totalVotesAll > 0 ? Math.round((top3Votes / totalVotesAll) * 1000) / 10 : 0;
+    const totalVotesAll = allCandidates.reduce(
+      (s: number, c: any) => s + c.totalVotes,
+      0,
+    );
+    const top3Votes = allCandidates
+      .slice(0, 3)
+      .reduce((s: number, c: any) => s + c.totalVotes, 0);
+    const concentrationRate =
+      totalVotesAll > 0
+        ? Math.round((top3Votes / totalVotesAll) * 1000) / 10
+        : 0;
 
     // Performance by zone (tenant candidate)
     const byZone = await this.dataSource.query(
@@ -516,23 +690,39 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       zone: r.zone,
       votes: parseInt(r.votes, 10),
       totalVotes: parseInt(r.totalVotes, 10),
-      percentage: parseInt(r.totalVotes, 10) > 0
-        ? Math.round((parseInt(r.votes, 10) / parseInt(r.totalVotes, 10)) * 1000) / 10
-        : 0,
+      percentage:
+        parseInt(r.totalVotes, 10) > 0
+          ? Math.round(
+              (parseInt(r.votes, 10) / parseInt(r.totalVotes, 10)) * 1000,
+            ) / 10
+          : 0,
     }));
 
-    const avgPercentage = zonePerformance.length > 0
-      ? zonePerformance.reduce((s: number, z: any) => s + z.percentage, 0) / zonePerformance.length
-      : 0;
+    const avgPercentage =
+      zonePerformance.length > 0
+        ? zonePerformance.reduce((s: number, z: any) => s + z.percentage, 0) /
+          zonePerformance.length
+        : 0;
 
     // Strongest/weakest
     const strongestZone = zonePerformance[0] ?? null;
-    const weakestZone = zonePerformance.length > 0 ? zonePerformance[zonePerformance.length - 1] : null;
+    const weakestZone =
+      zonePerformance.length > 0
+        ? zonePerformance[zonePerformance.length - 1]
+        : null;
 
     // Top 5 concentration for tenant
-    const tenantTotalVotes = zonePerformance.reduce((s: number, z: any) => s + z.votes, 0);
-    const top5Votes = zonePerformance.slice(0, 5).reduce((s: number, z: any) => s + z.votes, 0);
-    const tenantConcentration = tenantTotalVotes > 0 ? Math.round((top5Votes / tenantTotalVotes) * 1000) / 10 : 0;
+    const tenantTotalVotes = zonePerformance.reduce(
+      (s: number, z: any) => s + z.votes,
+      0,
+    );
+    const top5Votes = zonePerformance
+      .slice(0, 5)
+      .reduce((s: number, z: any) => s + z.votes, 0);
+    const tenantConcentration =
+      tenantTotalVotes > 0
+        ? Math.round((top5Votes / tenantTotalVotes) * 1000) / 10
+        : 0;
 
     // Cities for tenant
     const byCity = await this.dataSource.query(
@@ -543,7 +733,9 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       ORDER BY votes DESC`,
       params,
     );
-    const strongestCity = byCity[0] ? { city: byCity[0].city, votes: parseInt(byCity[0].votes, 10) } : null;
+    const strongestCity = byCity[0]
+      ? { city: byCity[0].city, votes: parseInt(byCity[0].votes, 10) }
+      : null;
 
     return {
       topCandidate,
@@ -560,7 +752,7 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       tenantConcentration,
       avgPercentage: Math.round(avgPercentage * 10) / 10,
       totalVotes: tenantTotalVotes,
-      performanceByZone: zonePerformance.map(z => ({
+      performanceByZone: zonePerformance.map((z) => ({
         ...z,
         vsAverage: Math.round((z.percentage - avgPercentage) * 10) / 10,
       })),
@@ -568,7 +760,13 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
   }
 
   // ── Comparison (zone-by-zone / city-by-city with winner) ──
-  async getComparison(tenantId: string, tenant: Tenant, candidateNames: string[], queryYear?: number, round?: number) {
+  async getComparison(
+    tenantId: string,
+    tenant: Tenant,
+    candidateNames: string[],
+    queryYear?: number,
+    round?: number,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
     if (!candidateNames || candidateNames.length < 2) return null;
 
@@ -617,14 +815,14 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
         number: c1Info?.candidateNumber || '',
         party: c1Info?.candidateParty || '',
         totalVotes: total1,
-        zonesWon: zoneComparison.filter(c => c.winner === 1).length,
+        zonesWon: zoneComparison.filter((c) => c.winner === 1).length,
       },
       candidate2: {
         name: c2Info?.candidateName || c2Name,
         number: c2Info?.candidateNumber || '',
         party: c2Info?.candidateParty || '',
         totalVotes: total2,
-        zonesWon: zoneComparison.filter(c => c.winner === 2).length,
+        zonesWon: zoneComparison.filter((c) => c.winner === 2).length,
       },
       comparison: zoneComparison,
       overallWinner: total1 > total2 ? 1 : total2 > total1 ? 2 : 0,
@@ -632,7 +830,12 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
   }
 
   // ── Projections ──
-  async getProjections(tenantId: string, tenant: Tenant, queryYear?: number, round?: number) {
+  async getProjections(
+    tenantId: string,
+    tenant: Tenant,
+    queryYear?: number,
+    round?: number,
+  ) {
     const year = this.yearFilter(tenant, queryYear);
     const params: any[] = [tenantId, year];
     let roundClause = '';
@@ -654,21 +857,29 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       zone: r.zone,
       votes: parseInt(r.votes, 10),
       totalVotes: parseInt(r.totalVotes, 10),
-      percentage: parseInt(r.totalVotes, 10) > 0
-        ? (parseInt(r.votes, 10) / parseInt(r.totalVotes, 10)) * 100
-        : 0,
+      percentage:
+        parseInt(r.totalVotes, 10) > 0
+          ? (parseInt(r.votes, 10) / parseInt(r.totalVotes, 10)) * 100
+          : 0,
     }));
 
     const currentTotal = zones.reduce((s, z) => s + z.votes, 0);
-    const avgPercentage = zones.length > 0
-      ? zones.reduce((s, z) => s + z.percentage, 0) / zones.length
-      : 0;
+    const avgPercentage =
+      zones.length > 0
+        ? zones.reduce((s, z) => s + z.percentage, 0) / zones.length
+        : 0;
 
-    const weakZones = zones.filter(z => z.percentage < avgPercentage);
+    const weakZones = zones.filter((z) => z.percentage < avgPercentage);
     const weakZonesVotes = weakZones.reduce((s, z) => s + z.votes, 0);
 
-    const scenario10 = weakZones.reduce((s, z) => s + Math.round(z.totalVotes * 0.10), 0);
-    const scenario20 = weakZones.reduce((s, z) => s + Math.round(z.totalVotes * 0.20), 0);
+    const scenario10 = weakZones.reduce(
+      (s, z) => s + Math.round(z.totalVotes * 0.1),
+      0,
+    );
+    const scenario20 = weakZones.reduce(
+      (s, z) => s + Math.round(z.totalVotes * 0.2),
+      0,
+    );
 
     // Multi-year trend
     const years = await this.dataSource.query(
@@ -699,8 +910,16 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       weakZonesCount: weakZones.length,
       weakZonesVotes,
       scenarios: [
-        { label: '+10% nas zonas fracas', additionalVotes: scenario10, projectedTotal: currentTotal + scenario10 },
-        { label: '+20% nas zonas fracas', additionalVotes: scenario20, projectedTotal: currentTotal + scenario20 },
+        {
+          label: '+10% nas zonas fracas',
+          additionalVotes: scenario10,
+          projectedTotal: currentTotal + scenario10,
+        },
+        {
+          label: '+20% nas zonas fracas',
+          additionalVotes: scenario20,
+          projectedTotal: currentTotal + scenario20,
+        },
       ],
       trend,
     };
@@ -710,8 +929,10 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
   async bulkCreate(tenantId: string, tenant: Tenant, data: any[]) {
     const tenantName = normalizeStr(tenant.name);
 
-    const entities = data.map(row => {
-      const isTenantCandidate = row.isTenantCandidate ?? normalizeStr(row.candidateName || '') === tenantName;
+    const entities = data.map((row) => {
+      const isTenantCandidate =
+        row.isTenantCandidate ??
+        normalizeStr(row.candidateName || '') === tenantName;
       return this.repository.create({
         tenantId,
         electionYear: row.electionYear,
@@ -749,7 +970,7 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       return { imported: 0, skipped: 0, candidates: [] };
     }
 
-    const headers = lines[0].split(';').map(h => h.replace(/"/g, '').trim());
+    const headers = lines[0].split(';').map((h) => h.replace(/"/g, '').trim());
 
     let imported = 0;
     let skipped = 0;
@@ -760,12 +981,17 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       const line = lines[i].trim();
       if (!line) continue;
 
-      const values = line.split(';').map(v => v.replace(/"/g, '').trim());
+      const values = line.split(';').map((v) => v.replace(/"/g, '').trim());
       const row: Record<string, string> = {};
-      headers.forEach((h, idx) => { row[h] = values[idx] || ''; });
+      headers.forEach((h, idx) => {
+        row[h] = values[idx] || '';
+      });
 
       const name = row['NM_VOTAVEL'] || '';
-      if (!name) { skipped++; continue; }
+      if (!name) {
+        skipped++;
+        continue;
+      }
 
       const isTenantCandidate = normalizeStr(name) === tenantName;
       candidatesSet.add(name);
@@ -813,10 +1039,13 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
   }
 
   private async insertBatch(rows: any[]) {
-    const escapeSql = (str: string) => str ? str.replace(/'/g, "''") : '';
-    const values = rows.map(r =>
-      `('${r.tenantId}', ${r.electionYear}, ${r.round}, '${escapeSql(r.candidateName)}', ${r.candidateNumber ? `'${escapeSql(r.candidateNumber)}'` : 'NULL'}, ${r.candidateParty ? `'${escapeSql(r.candidateParty)}'` : 'NULL'}, ${r.isTenantCandidate}, ${r.zone ? `'${escapeSql(r.zone)}'` : 'NULL'}, ${r.section ? `'${escapeSql(r.section)}'` : 'NULL'}, ${r.city ? `'${escapeSql(r.city)}'` : 'NULL'}, ${r.state ? `'${escapeSql(r.state)}'` : 'NULL'}, NULL, ${r.candidateVotes}, ${r.totalVotes}, ${r.party ? `'${escapeSql(r.party)}'` : 'NULL'})`,
-    ).join(',\n');
+    const escapeSql = (str: string) => (str ? str.replace(/'/g, "''") : '');
+    const values = rows
+      .map(
+        (r) =>
+          `('${r.tenantId}', ${r.electionYear}, ${r.round}, '${escapeSql(r.candidateName)}', ${r.candidateNumber ? `'${escapeSql(r.candidateNumber)}'` : 'NULL'}, ${r.candidateParty ? `'${escapeSql(r.candidateParty)}'` : 'NULL'}, ${r.isTenantCandidate}, ${r.zone ? `'${escapeSql(r.zone)}'` : 'NULL'}, ${r.section ? `'${escapeSql(r.section)}'` : 'NULL'}, ${r.city ? `'${escapeSql(r.city)}'` : 'NULL'}, ${r.state ? `'${escapeSql(r.state)}'` : 'NULL'}, NULL, ${r.candidateVotes}, ${r.totalVotes}, ${r.party ? `'${escapeSql(r.party)}'` : 'NULL'})`,
+      )
+      .join(',\n');
 
     await this.dataSource.query(`
       INSERT INTO election_results
@@ -826,7 +1055,8 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
   }
 
   private async recalcTotalVotes(tenantId: string) {
-    await this.dataSource.query(`
+    await this.dataSource.query(
+      `
       UPDATE election_results er
       SET "totalVotes" = sub.total
       FROM (
@@ -841,7 +1071,9 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
         AND er."round" = sub."round"
         AND er."zone" = sub."zone"
         AND er."section" = sub."section"
-    `, [tenantId]);
+    `,
+      [tenantId],
+    );
   }
 
   // ── TSE Municipalities (IBGE API) ──
@@ -849,7 +1081,8 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
     const uf = state.toUpperCase();
     const url = `https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios?orderBy=nome`;
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`Falha ao buscar municipios do IBGE para ${uf}`);
+    if (!response.ok)
+      throw new Error(`Falha ao buscar municipios do IBGE para ${uf}`);
     const data = await response.json();
     return data.map((m: any) => ({ name: m.nome as string }));
   }
@@ -879,7 +1112,9 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
 
     const zip = new AdmZip(zipBuffer);
     const entries = zip.getEntries();
-    const csvEntry = entries.find(e => e.entryName.endsWith('.csv') || e.entryName.endsWith('.CSV'));
+    const csvEntry = entries.find(
+      (e) => e.entryName.endsWith('.csv') || e.entryName.endsWith('.CSV'),
+    );
 
     if (!csvEntry) {
       throw new Error('Arquivo CSV nao encontrado no ZIP do TSE');
@@ -894,8 +1129,12 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       fs.renameSync(extractedPath, tmpCsvPath);
     }
 
-    const targetMunCode = municipalityCode ? municipalityCode.replace(/^0+/, '') : '';
-    const targetMunName = municipalityName ? normalizeStr(municipalityName) : '';
+    const targetMunCode = municipalityCode
+      ? municipalityCode.replace(/^0+/, '')
+      : '';
+    const targetMunName = municipalityName
+      ? normalizeStr(municipalityName)
+      : '';
     const tenantNameNorm = normalizeStr(candidateName || tenant.name);
 
     let imported = 0;
@@ -915,29 +1154,45 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       if (!line) continue;
 
       if (lineNum === 0) {
-        headers = line.split(';').map((h: string) => h.replace(/"/g, '').trim());
+        headers = line
+          .split(';')
+          .map((h: string) => h.replace(/"/g, '').trim());
         lineNum++;
         continue;
       }
       lineNum++;
 
-      const values = line.split(';').map((v: string) => v.replace(/"/g, '').trim());
+      const values = line
+        .split(';')
+        .map((v: string) => v.replace(/"/g, '').trim());
       const row: Record<string, string> = {};
-      headers.forEach((h, idx) => { row[h] = values[idx] || ''; });
+      headers.forEach((h, idx) => {
+        row[h] = values[idx] || '';
+      });
 
       // Match by municipality name (preferred) or code (fallback)
       if (targetMunName) {
         const csvMunName = normalizeStr(row['NM_MUNICIPIO'] || '');
-        if (csvMunName !== targetMunName) { skipped++; continue; }
+        if (csvMunName !== targetMunName) {
+          skipped++;
+          continue;
+        }
       } else if (targetMunCode) {
         const csvMunCode = (row['CD_MUNICIPIO'] || '').replace(/^0+/, '');
-        if (csvMunCode !== targetMunCode) { skipped++; continue; }
+        if (csvMunCode !== targetMunCode) {
+          skipped++;
+          continue;
+        }
       } else {
-        skipped++; continue;
+        skipped++;
+        continue;
       }
 
       const name = row['NM_VOTAVEL'] || '';
-      if (!name) { skipped++; continue; }
+      if (!name) {
+        skipped++;
+        continue;
+      }
 
       const isTenantCandidate = normalizeStr(name) === tenantNameNorm;
       candidatesSet.add(name);
@@ -967,7 +1222,8 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
         await this.insertBatch(batch);
         imported += batch.length;
         batch.length = 0;
-        if (imported % 5000 === 0) logger.log(`Importados: ${imported} registros...`);
+        if (imported % 5000 === 0)
+          logger.log(`Importados: ${imported} registros...`);
       }
     }
 
@@ -976,11 +1232,15 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
       imported += batch.length;
     }
 
-    try { fs.unlinkSync(tmpCsvPath); } catch (_) {}
+    try {
+      fs.unlinkSync(tmpCsvPath);
+    } catch (_) {}
 
     await this.recalcTotalVotes(tenantId);
 
-    logger.log(`Importacao concluida: ${imported} registros, ${candidatesSet.size} candidatos`);
+    logger.log(
+      `Importacao concluida: ${imported} registros, ${candidatesSet.size} candidatos`,
+    );
 
     return {
       imported,
@@ -991,19 +1251,29 @@ export class ElectionResultsService extends TenantAwareService<ElectionResult> {
 
   private downloadFile(url: string): Promise<Buffer> {
     return new Promise((resolve, reject) => {
-      const protocol = url.startsWith('https') ? require('https') : require('http');
-      protocol.get(url, { timeout: 120000 }, (res: any) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          return this.downloadFile(res.headers.location).then(resolve).catch(reject);
-        }
-        if (res.statusCode !== 200) {
-          return reject(new Error(`TSE retornou status ${res.statusCode}`));
-        }
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk: Buffer) => chunks.push(chunk));
-        res.on('end', () => resolve(Buffer.concat(chunks)));
-        res.on('error', reject);
-      }).on('error', reject);
+      const protocol = url.startsWith('https')
+        ? require('https')
+        : require('http');
+      protocol
+        .get(url, { timeout: 120000 }, (res: any) => {
+          if (
+            res.statusCode >= 300 &&
+            res.statusCode < 400 &&
+            res.headers.location
+          ) {
+            return this.downloadFile(res.headers.location)
+              .then(resolve)
+              .catch(reject);
+          }
+          if (res.statusCode !== 200) {
+            return reject(new Error(`TSE retornou status ${res.statusCode}`));
+          }
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => resolve(Buffer.concat(chunks)));
+          res.on('error', reject);
+        })
+        .on('error', reject);
     });
   }
 

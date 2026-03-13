@@ -116,10 +116,14 @@ export class VotersController {
     @Query('gender') gender?: string,
   ) {
     const buffer = await this.votersService.exportToExcel(req.tenantId, {
-      search, neighborhood, leaderId, gender,
+      search,
+      neighborhood,
+      leaderId,
+      gender,
     });
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': 'attachment; filename="eleitores.xlsx"',
     });
     res.send(buffer);
@@ -129,7 +133,8 @@ export class VotersController {
   async downloadTemplate(@Res() res: Response) {
     const buffer = await this.votersService.generateTemplate();
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': 'attachment; filename="modelo_eleitores.xlsx"',
     });
     res.send(buffer);
@@ -139,7 +144,9 @@ export class VotersController {
   @UseInterceptors(FileInterceptor('file'))
   importUpload(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
     if (!file || !file.buffer) {
-      throw new BadRequestException('Arquivo nao recebido. Envie um .xlsx valido.');
+      throw new BadRequestException(
+        'Arquivo nao recebido. Envie um .xlsx valido.',
+      );
     }
     return this.votersService.importFromExcel(req.tenantId, file.buffer);
   }
@@ -167,7 +174,11 @@ export class VotersController {
   }
 
   @Patch(':id')
-  update(@Req() req: any, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateVoterDto) {
+  update(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateVoterDto,
+  ) {
     return this.votersService.update(req.tenantId, id, dto);
   }
 

@@ -13,7 +13,10 @@ import pino from 'pino';
 import * as QRCode from 'qrcode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { WhatsappConnection, ConnectionStatus } from './entities/whatsapp-connection.entity';
+import {
+  WhatsappConnection,
+  ConnectionStatus,
+} from './entities/whatsapp-connection.entity';
 import {
   WhatsappMessage,
   MessageDirection,
@@ -34,7 +37,10 @@ interface TenantSocket {
 const baileysLogger = pino({ level: 'silent' });
 
 @Injectable()
-export class WhatsappBaileysService extends EventEmitter implements OnModuleDestroy {
+export class WhatsappBaileysService
+  extends EventEmitter
+  implements OnModuleDestroy
+{
   private readonly logger = new Logger(WhatsappBaileysService.name);
   private sockets = new Map<string, TenantSocket>();
   private readonly sessionsDir: string;
@@ -46,7 +52,9 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
     private messageRepo: Repository<WhatsappMessage>,
   ) {
     super();
-    this.sessionsDir = path.resolve(process.env.WHATSAPP_SESSIONS_PATH || './whatsapp-sessions');
+    this.sessionsDir = path.resolve(
+      process.env.WHATSAPP_SESSIONS_PATH || './whatsapp-sessions',
+    );
     if (!fs.existsSync(this.sessionsDir)) {
       fs.mkdirSync(this.sessionsDir, { recursive: true });
     }
@@ -78,7 +86,10 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
 
   // ── Connect / create socket ──
 
-  async connect(tenantId: string, connectionId: string): Promise<string | null> {
+  async connect(
+    tenantId: string,
+    connectionId: string,
+  ): Promise<string | null> {
     const existing = this.sockets.get(tenantId);
     if (existing) {
       if (existing.status === ConnectionStatus.CONNECTED) return null;
@@ -149,7 +160,9 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
           });
 
           this.emit('connected', { tenantId, phoneNumber, pushName });
-          this.logger.log(`WhatsApp connected for tenant ${tenantId} (${phoneNumber})`);
+          this.logger.log(
+            `WhatsApp connected for tenant ${tenantId} (${phoneNumber})`,
+          );
         }
 
         if (connection === 'close') {
@@ -179,7 +192,9 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
                 try {
                   await this.connect(tenantId, connectionId);
                 } catch (err) {
-                  this.logger.error(`Reconnection failed for ${tenantId}: ${err.message}`);
+                  this.logger.error(
+                    `Reconnection failed for ${tenantId}: ${err.message}`,
+                  );
                 }
               }
             }, delay);
@@ -213,7 +228,9 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
             tenantSocket.lidToPhone.set(lid, id);
           }
         }
-        this.logger.log(`[LID MAP] Total mappings: ${tenantSocket.lidToPhone.size}`);
+        this.logger.log(
+          `[LID MAP] Total mappings: ${tenantSocket.lidToPhone.size}`,
+        );
       }
 
       if (events['contacts.update']) {
@@ -246,24 +263,37 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
                     where: { tenantId, externalId },
                     select: ['remoteJid', 'remotePhone'],
                   });
-                  if (outbound && outbound.remoteJid.endsWith('@s.whatsapp.net')) {
+                  if (
+                    outbound &&
+                    outbound.remoteJid.endsWith('@s.whatsapp.net')
+                  ) {
                     tenantSocket.lidToPhone.set(ownJid, outbound.remoteJid);
-                    this.logger.log(`[LID MAP] Captured from own msg echo: ${ownJid} → ${outbound.remoteJid}`);
+                    this.logger.log(
+                      `[LID MAP] Captured from own msg echo: ${ownJid} → ${outbound.remoteJid}`,
+                    );
                   }
-                } catch { /* ignore */ }
+                } catch {
+                  /* ignore */
+                }
               }
             }
             continue;
           }
 
           const remoteJid = msg.key.remoteJid || '';
-          const isPersonalChat = remoteJid.endsWith('@s.whatsapp.net') || remoteJid.endsWith('@lid');
+          const isPersonalChat =
+            remoteJid.endsWith('@s.whatsapp.net') || remoteJid.endsWith('@lid');
           if (!isPersonalChat) continue;
 
           // For @lid JIDs, try to resolve to the real phone JID
           let resolvedJid = remoteJid;
           if (remoteJid.endsWith('@lid')) {
-            resolvedJid = await this.resolveLidJid(tenantId, tenantSocket, remoteJid, msg);
+            resolvedJid = await this.resolveLidJid(
+              tenantId,
+              tenantSocket,
+              remoteJid,
+              msg,
+            );
           }
 
           const remotePhone = resolvedJid.split('@')[0];
@@ -279,11 +309,15 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
             innerMessage.documentMessage?.caption ||
             (innerMessage.imageMessage ? '[imagem]' : '') ||
             (innerMessage.videoMessage ? '[video]' : '') ||
-            (innerMessage.audioMessage || innerMessage.pttMessage ? '[audio]' : '') ||
+            (innerMessage.audioMessage || innerMessage.pttMessage
+              ? '[audio]'
+              : '') ||
             (innerMessage.stickerMessage ? '[sticker]' : '') ||
             (innerMessage.documentMessage ? '[documento]' : '') ||
             (innerMessage.locationMessage ? '[localizacao]' : '') ||
-            (innerMessage.contactMessage || innerMessage.contactsArrayMessage ? '[contato]' : '') ||
+            (innerMessage.contactMessage || innerMessage.contactsArrayMessage
+              ? '[contato]'
+              : '') ||
             '[midia]';
           const remoteName = msg.pushName || undefined;
 
@@ -309,7 +343,9 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
             this.logger.log(`Incoming message saved with id=${saved.id}`);
             this.emit('message', { tenantId, message: saved });
           } catch (err) {
-            this.logger.error(`Failed to save incoming message: ${err.message}`);
+            this.logger.error(
+              `Failed to save incoming message: ${err.message}`,
+            );
           }
         }
       }
@@ -343,7 +379,12 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
 
   // ── Send message ──
 
-  async sendMessage(tenantId: string, phone: string, content: string, quotedId?: string) {
+  async sendMessage(
+    tenantId: string,
+    phone: string,
+    content: string,
+    quotedId?: string,
+  ) {
     const ts = this.sockets.get(tenantId);
     if (!ts || ts.status !== ConnectionStatus.CONNECTED) {
       throw new Error('WhatsApp nao conectado');
@@ -373,7 +414,9 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
         }
       } catch (err) {
         if (err.message?.includes('nao encontrado')) throw err;
-        this.logger.warn(`onWhatsApp check failed for ${jid}: ${err.message}, proceeding anyway`);
+        this.logger.warn(
+          `onWhatsApp check failed for ${jid}: ${err.message}, proceeding anyway`,
+        );
       }
     }
 
@@ -386,7 +429,9 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
       : undefined;
 
     try {
-      const sent = await ts.socket.sendMessage(jid, { text: content }, { quoted } as any);
+      const sent = await ts.socket.sendMessage(jid, { text: content }, {
+        quoted,
+      } as any);
 
       this.logger.log(`Message sent to ${jid}, externalId: ${sent?.key?.id}`);
 
@@ -395,10 +440,17 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
         const sentJid = sent.key.remoteJid;
         if (sentJid.endsWith('@lid')) {
           ts.lidToPhone.set(sentJid, jid);
-          this.logger.log(`[LID MAP] Captured from sendMessage: ${sentJid} → ${jid}`);
-        } else if (jid.endsWith('@lid') && sentJid.endsWith('@s.whatsapp.net')) {
+          this.logger.log(
+            `[LID MAP] Captured from sendMessage: ${sentJid} → ${jid}`,
+          );
+        } else if (
+          jid.endsWith('@lid') &&
+          sentJid.endsWith('@s.whatsapp.net')
+        ) {
           ts.lidToPhone.set(jid, sentJid);
-          this.logger.log(`[LID MAP] Captured from sendMessage: ${jid} → ${sentJid}`);
+          this.logger.log(
+            `[LID MAP] Captured from sendMessage: ${jid} → ${sentJid}`,
+          );
         }
       }
 
@@ -469,7 +521,9 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
 
     try {
       ts.socket.end(undefined);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     this.sockets.delete(tenantId);
 
@@ -538,13 +592,17 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
       return fromMap;
     }
 
-    this.logger.warn(`[LID] ${lidJid} not in map (size: ${ts.lidToPhone.size}), trying other strategies...`);
+    this.logger.warn(
+      `[LID] ${lidJid} not in map (size: ${ts.lidToPhone.size}), trying other strategies...`,
+    );
 
     // Strategy 2: msg.key.participant (sometimes has phone JID in group-like contexts)
     const participant = msg.key?.participant;
     if (participant && participant.endsWith('@s.whatsapp.net')) {
       ts.lidToPhone.set(lidJid, participant);
-      this.logger.log(`[LID] Resolved via participant: ${lidJid} → ${participant}`);
+      this.logger.log(
+        `[LID] Resolved via participant: ${lidJid} → ${participant}`,
+      );
       return participant;
     }
 
@@ -557,7 +615,9 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
       if (prevResolved && prevResolved.remotePhone.length <= 13) {
         const phoneJid = `${prevResolved.remotePhone}@s.whatsapp.net`;
         ts.lidToPhone.set(lidJid, phoneJid);
-        this.logger.log(`[LID] Resolved from DB (prev msg): ${lidJid} → ${phoneJid}`);
+        this.logger.log(
+          `[LID] Resolved from DB (prev msg): ${lidJid} → ${phoneJid}`,
+        );
         return phoneJid;
       }
     } catch (err) {
@@ -567,8 +627,9 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
     // Strategy 4: If the message is a reply (has contextInfo.stanzaId), find the original outbound
     try {
       const innerMsg = this.extractInnerMessage(msg.message);
-      const quotedId = innerMsg?.extendedTextMessage?.contextInfo?.stanzaId
-        || innerMsg?.contextInfo?.stanzaId;
+      const quotedId =
+        innerMsg?.extendedTextMessage?.contextInfo?.stanzaId ||
+        innerMsg?.contextInfo?.stanzaId;
       if (quotedId) {
         const quotedMsg = await this.messageRepo.findOne({
           where: { tenantId, externalId: quotedId },
@@ -576,7 +637,9 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
         });
         if (quotedMsg && quotedMsg.remoteJid.endsWith('@s.whatsapp.net')) {
           ts.lidToPhone.set(lidJid, quotedMsg.remoteJid);
-          this.logger.log(`[LID] Resolved via quoted msg: ${lidJid} → ${quotedMsg.remoteJid}`);
+          this.logger.log(
+            `[LID] Resolved via quoted msg: ${lidJid} → ${quotedMsg.remoteJid}`,
+          );
           return quotedMsg.remoteJid;
         }
       }
@@ -607,7 +670,9 @@ export class WhatsappBaileysService extends EventEmitter implements OnModuleDest
       return this.extractInnerMessage(message.editedMessage.message);
     }
     if (message.documentWithCaptionMessage?.message) {
-      return this.extractInnerMessage(message.documentWithCaptionMessage.message);
+      return this.extractInnerMessage(
+        message.documentWithCaptionMessage.message,
+      );
     }
     return message;
   }

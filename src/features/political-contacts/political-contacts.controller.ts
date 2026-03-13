@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards, ParseUUIDPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Req,
+  UseGuards,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { PoliticalContactsService } from './political-contacts.service';
 import { CreatePoliticalContactDto } from './dto/create-political-contact.dto';
 import { UpdatePoliticalContactDto } from './dto/update-political-contact.dto';
@@ -13,17 +24,31 @@ export class PoliticalContactsController {
   constructor(private service: PoliticalContactsService) {}
 
   @Get()
-  findAll(@Req() req: any) { return this.service.findAll(req.tenantId); }
+  findAll(@Req() req: any) {
+    return this.service.findAll(req.tenantId);
+  }
 
   @Get(':id')
-  findOne(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) { return this.service.findOne(req.tenantId, id); }
+  findOne(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
+    return this.service.findOne(req.tenantId, id);
+  }
 
   @Post()
-  create(@Req() req: any, @Body() dto: CreatePoliticalContactDto) { return this.service.create(req.tenantId, dto); }
+  create(@Req() req: any, @Body() dto: CreatePoliticalContactDto) {
+    return this.service.create(req.tenantId, dto);
+  }
 
   @Patch(':id')
-  update(@Req() req: any, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePoliticalContactDto) { return this.service.update(req.tenantId, id, dto); }
+  update(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePoliticalContactDto,
+  ) {
+    return this.service.update(req.tenantId, id, dto);
+  }
 
   @Delete(':id')
-  remove(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) { return this.service.remove(req.tenantId, id); }
+  remove(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
+    return this.service.remove(req.tenantId, id);
+  }
 }

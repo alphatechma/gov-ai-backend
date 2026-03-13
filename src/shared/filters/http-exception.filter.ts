@@ -30,7 +30,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const body =
       typeof message === 'string'
         ? { statusCode: status, message }
-        : { statusCode: status, ...(message as object) };
+        : { statusCode: status, ...message };
 
     response.status(status).json(body);
   }

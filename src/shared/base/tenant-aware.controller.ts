@@ -13,7 +13,9 @@ import { JwtAuthGuard } from '../../core/auth/guards/jwt-auth.guard';
 import { TenantAwareService } from './tenant-aware.service';
 
 @UseGuards(JwtAuthGuard)
-export abstract class TenantAwareController<T extends { id: string; tenantId: string }> {
+export abstract class TenantAwareController<
+  T extends { id: string; tenantId: string },
+> {
   constructor(protected readonly service: TenantAwareService<T>) {}
 
   @Get()

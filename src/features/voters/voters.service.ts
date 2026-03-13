@@ -45,19 +45,34 @@ export class VotersService extends TenantAwareService<Voter> {
 
   async update(tenantId: string, id: string, dto: DeepPartial<Voter>) {
     // Re-geocodificar se campos de endereço mudaram e não vieram coordenadas novas
-    const addressFieldChanged = dto.address !== undefined || dto.neighborhood !== undefined
-      || dto.city !== undefined || dto.state !== undefined || dto.zipCode !== undefined;
+    const addressFieldChanged =
+      dto.address !== undefined ||
+      dto.neighborhood !== undefined ||
+      dto.city !== undefined ||
+      dto.state !== undefined ||
+      dto.zipCode !== undefined;
 
     if (addressFieldChanged && dto.latitude === undefined) {
       const existing = await this.findOne(tenantId, id);
-      const address = dto.address !== undefined ? dto.address as string : existing.address;
-      const neighborhood = dto.neighborhood !== undefined ? dto.neighborhood as string : existing.neighborhood;
-      const city = dto.city !== undefined ? dto.city as string : existing.city;
-      const state = dto.state !== undefined ? dto.state as string : existing.state;
-      const zipCode = dto.zipCode !== undefined ? dto.zipCode as string : existing.zipCode;
+      const address =
+        dto.address !== undefined ? dto.address : existing.address;
+      const neighborhood =
+        dto.neighborhood !== undefined
+          ? dto.neighborhood
+          : existing.neighborhood;
+      const city = dto.city !== undefined ? dto.city : existing.city;
+      const state = dto.state !== undefined ? dto.state : existing.state;
+      const zipCode =
+        dto.zipCode !== undefined ? dto.zipCode : existing.zipCode;
 
       if (address || neighborhood || city) {
-        const geo = await this.geocodingService.geocode({ address, neighborhood, city, state, zipCode });
+        const geo = await this.geocodingService.geocode({
+          address,
+          neighborhood,
+          city,
+          state,
+          zipCode,
+        });
         if (geo) {
           dto.latitude = geo.latitude;
           dto.longitude = geo.longitude;
@@ -70,14 +85,25 @@ export class VotersService extends TenantAwareService<Voter> {
   async getHeatmapData(tenantId: string) {
     return this.votersRepo
       .createQueryBuilder('v')
-      .select(['v.latitude', 'v.longitude', 'v.name', 'v.neighborhood', 'v.city', 'v.state', 'v.supportLevel'])
+      .select([
+        'v.latitude',
+        'v.longitude',
+        'v.name',
+        'v.neighborhood',
+        'v.city',
+        'v.state',
+        'v.supportLevel',
+      ])
       .where('v.tenantId = :tenantId', { tenantId })
       .andWhere('v.latitude IS NOT NULL')
       .andWhere('v.longitude IS NOT NULL')
       .getMany();
   }
 
-  async getHeatmapAggregated(tenantId: string, groupBy: 'neighborhood' | 'city' | 'state') {
+  async getHeatmapAggregated(
+    tenantId: string,
+    groupBy: 'neighborhood' | 'city' | 'state',
+  ) {
     const qb = this.votersRepo
       .createQueryBuilder('v')
       .where('v.tenantId = :tenantId', { tenantId })
@@ -166,31 +192,47 @@ export class VotersService extends TenantAwareService<Voter> {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     // Try to find a data sheet (skip summary sheets)
     const dataSheetNames = ['Cadastro de Eleitores', 'Eleitores'];
-    let sheet = workbook.Sheets[dataSheetNames.find((n) => workbook.SheetNames.includes(n)) ?? ''];
+    let sheet =
+      workbook.Sheets[
+        dataSheetNames.find((n) => workbook.SheetNames.includes(n)) ?? ''
+      ];
     if (!sheet) sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) throw new BadRequestException('Planilha vazia');
 
     let rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
-    if (rows.length === 0) throw new BadRequestException('Nenhum registro encontrado na planilha');
+    if (rows.length === 0)
+      throw new BadRequestException('Nenhum registro encontrado na planilha');
 
     // Detect report format: if any of the first rows have __EMPTY keys, it's a report
-    const isReport = rows.slice(0, 5).some((r) =>
-      Object.keys(r).some((k) => k.startsWith('__EMPTY')),
-    );
+    const isReport = rows
+      .slice(0, 5)
+      .some((r) => Object.keys(r).some((k) => k.startsWith('__EMPTY')));
     if (isReport) {
       // Find the header row: the one with "Nome" or "Nome Completo" as a VALUE and multiple columns
       const headerIdx = rows.findIndex((r) => {
-        const vals = Object.values(r).map((v) => String(v).toLowerCase().trim());
-        return vals.some((v) => v === 'nome' || v === 'nome completo') && Object.keys(r).length > 3;
+        const vals = Object.values(r).map((v) =>
+          String(v).toLowerCase().trim(),
+        );
+        return (
+          vals.some((v) => v === 'nome' || v === 'nome completo') &&
+          Object.keys(r).length > 3
+        );
       });
       if (headerIdx >= 0) {
-        const headerValues = Object.values(rows[headerIdx]).map((v) => String(v).trim());
+        const headerValues = Object.values(rows[headerIdx]).map((v) =>
+          String(v).trim(),
+        );
         const dataRows = rows.slice(headerIdx + 1);
         rows = dataRows.map((r) => {
           const obj: Record<string, any> = {};
           const values = Object.values(r);
           headerValues.forEach((h, i) => {
-            if (h && values[i] !== undefined && values[i] !== null && String(values[i]).trim() !== '') {
+            if (
+              h &&
+              values[i] !== undefined &&
+              values[i] !== null &&
+              String(values[i]).trim() !== ''
+            ) {
               obj[h] = values[i];
             }
           });
@@ -205,16 +247,16 @@ export class VotersService extends TenantAwareService<Voter> {
       telefone: 'phone',
       whatsapp: 'phone',
       'data de nascimento': 'birthDate',
-      'endereco': 'address',
-      'endereço': 'address',
+      endereco: 'address',
+      endereço: 'address',
       bairro: 'neighborhood',
       cidade: 'city',
       estado: 'state',
       cep: 'zipCode',
       titulo: 'voterRegistration',
       'titulo de eleitor': 'voterRegistration',
-      'lideranca': 'leaderName',
-      'liderança': 'leaderName',
+      lideranca: 'leaderName',
+      liderança: 'leaderName',
       'lideranca responsavel': 'leaderName',
       'liderança responsável': 'leaderName',
       articulador: 'leaderName',
@@ -242,7 +284,12 @@ export class VotersService extends TenantAwareService<Voter> {
 
       for (const [header, value] of Object.entries(row)) {
         const key = COLUMN_MAP[header.toLowerCase().trim()];
-        if (key && value !== null && value !== undefined && String(value).trim() !== '') {
+        if (
+          key &&
+          value !== null &&
+          value !== undefined &&
+          String(value).trim() !== ''
+        ) {
           mapped[key] = String(value).trim();
         }
       }
@@ -262,7 +309,9 @@ export class VotersService extends TenantAwareService<Voter> {
             mapped.birthDate = `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
           }
         } else {
-          const parts = mapped.birthDate.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+          const parts = mapped.birthDate.match(
+            /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/,
+          );
           if (parts) {
             mapped.birthDate = `${parts[3]}-${parts[2].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
           }
@@ -305,7 +354,8 @@ export class VotersService extends TenantAwareService<Voter> {
               imported++;
             } catch {
               skipped++;
-              if (errors.length < 20) errors.push(`Erro ao salvar "${item.name}"`);
+              if (errors.length < 20)
+                errors.push(`Erro ao salvar "${item.name}"`);
             }
           }
         }
@@ -329,7 +379,8 @@ export class VotersService extends TenantAwareService<Voter> {
             imported++;
           } catch {
             skipped++;
-            if (errors.length < 20) errors.push(`Erro ao salvar "${item.name}"`);
+            if (errors.length < 20)
+              errors.push(`Erro ao salvar "${item.name}"`);
           }
         }
       }
@@ -340,7 +391,12 @@ export class VotersService extends TenantAwareService<Voter> {
       this.logger.error(`Erro no geocoding em background: ${err}`),
     );
 
-    return { imported, skipped, total: rows.length, errors: errors.slice(0, 20) };
+    return {
+      imported,
+      skipped,
+      total: rows.length,
+      errors: errors.slice(0, 20),
+    };
   }
 
   async getGeocodeStatus(tenantId: string) {
@@ -399,7 +455,9 @@ export class VotersService extends TenantAwareService<Voter> {
       .addGroupBy('v.state')
       .getRawMany();
 
-    this.logger.log(`Geocoding em background: ${groups.length} combinacoes unicas para tenant ${tenantId}`);
+    this.logger.log(
+      `Geocoding em background: ${groups.length} combinacoes unicas para tenant ${tenantId}`,
+    );
 
     let geocoded = 0;
     for (const group of groups) {
@@ -419,7 +477,9 @@ export class VotersService extends TenantAwareService<Voter> {
           .andWhere('latitude IS NULL');
 
         if (group.neighborhood) {
-          qb.andWhere('neighborhood = :neighborhood', { neighborhood: group.neighborhood });
+          qb.andWhere('neighborhood = :neighborhood', {
+            neighborhood: group.neighborhood,
+          });
         } else {
           qb.andWhere('neighborhood IS NULL');
         }
@@ -434,14 +494,27 @@ export class VotersService extends TenantAwareService<Voter> {
       }
     }
 
-    this.logger.log(`Geocoding concluido: ${geocoded} eleitores atualizados com coordenadas`);
+    this.logger.log(
+      `Geocoding concluido: ${geocoded} eleitores atualizados com coordenadas`,
+    );
   }
 
   async generateTemplate(): Promise<Buffer> {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Eleitores');
 
-    const headers = ['Nome', 'Telefone', 'Data de Nascimento', 'Endereco', 'Bairro', 'Cidade', 'Estado', 'CEP', 'Titulo', 'Lideranca'];
+    const headers = [
+      'Nome',
+      'Telefone',
+      'Data de Nascimento',
+      'Endereco',
+      'Bairro',
+      'Cidade',
+      'Estado',
+      'CEP',
+      'Titulo',
+      'Lideranca',
+    ];
     const widths = [30, 16, 18, 35, 20, 20, 8, 12, 16, 25];
 
     ws.columns = headers.map((header, i) => ({ header, width: widths[i] }));
@@ -449,7 +522,11 @@ export class VotersService extends TenantAwareService<Voter> {
     const headerRow = ws.getRow(1);
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4A4A4A' } };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF4A4A4A' },
+      };
       cell.alignment = { horizontal: 'center' };
     });
 
@@ -459,7 +536,12 @@ export class VotersService extends TenantAwareService<Voter> {
 
   async exportToExcel(
     tenantId: string,
-    filters: { search?: string; neighborhood?: string; leaderId?: string; gender?: string },
+    filters: {
+      search?: string;
+      neighborhood?: string;
+      leaderId?: string;
+      gender?: string;
+    },
   ): Promise<Buffer> {
     const qb = this.votersRepo
       .createQueryBuilder('v')
@@ -467,10 +549,14 @@ export class VotersService extends TenantAwareService<Voter> {
       .orderBy('v.createdAt', 'DESC');
 
     if (filters.search) {
-      qb.andWhere('(v.name ILIKE :q OR v.phone ILIKE :q)', { q: `%${filters.search}%` });
+      qb.andWhere('(v.name ILIKE :q OR v.phone ILIKE :q)', {
+        q: `%${filters.search}%`,
+      });
     }
     if (filters.neighborhood) {
-      qb.andWhere('v.neighborhood = :neighborhood', { neighborhood: filters.neighborhood });
+      qb.andWhere('v.neighborhood = :neighborhood', {
+        neighborhood: filters.neighborhood,
+      });
     }
     if (filters.leaderId) {
       qb.andWhere('v.leaderId = :leaderId', { leaderId: filters.leaderId });
@@ -492,15 +578,39 @@ export class VotersService extends TenantAwareService<Voter> {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Eleitores');
 
-    const headers = ['Nome', 'Telefone', 'Email', 'Genero', 'Data de Nascimento', 'Endereco', 'Bairro', 'Cidade', 'Estado', 'CEP', 'Titulo de Eleitor', 'Zona', 'Secao', 'Lideranca', 'Nivel de Apoio', 'Tags', 'Observacoes'];
-    const widths = [30, 16, 25, 12, 18, 35, 20, 20, 8, 12, 16, 8, 8, 25, 16, 20, 35];
+    const headers = [
+      'Nome',
+      'Telefone',
+      'Email',
+      'Genero',
+      'Data de Nascimento',
+      'Endereco',
+      'Bairro',
+      'Cidade',
+      'Estado',
+      'CEP',
+      'Titulo de Eleitor',
+      'Zona',
+      'Secao',
+      'Lideranca',
+      'Nivel de Apoio',
+      'Tags',
+      'Observacoes',
+    ];
+    const widths = [
+      30, 16, 25, 12, 18, 35, 20, 20, 8, 12, 16, 8, 8, 25, 16, 20, 35,
+    ];
 
     ws.columns = headers.map((header, i) => ({ header, width: widths[i] }));
 
     const headerRow = ws.getRow(1);
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4A4A4A' } };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF4A4A4A' },
+      };
       cell.alignment = { horizontal: 'center' };
     });
 
@@ -532,7 +642,14 @@ export class VotersService extends TenantAwareService<Voter> {
 
   async findAllPaginated(
     tenantId: string,
-    filters: { page?: number; limit?: number; search?: string; neighborhood?: string; leaderId?: string; gender?: string },
+    filters: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      neighborhood?: string;
+      leaderId?: string;
+      gender?: string;
+    },
   ): Promise<{ data: Voter[]; total: number; page: number; limit: number }> {
     const page = Math.max(1, filters.page || 1);
     const limit = Math.min(200, Math.max(1, filters.limit || 50));
@@ -543,10 +660,14 @@ export class VotersService extends TenantAwareService<Voter> {
       .where('v.tenantId = :tenantId', { tenantId });
 
     if (filters.search) {
-      qb.andWhere('(v.name ILIKE :q OR v.phone ILIKE :q)', { q: `%${filters.search}%` });
+      qb.andWhere('(v.name ILIKE :q OR v.phone ILIKE :q)', {
+        q: `%${filters.search}%`,
+      });
     }
     if (filters.neighborhood) {
-      qb.andWhere('v.neighborhood = :neighborhood', { neighborhood: filters.neighborhood });
+      qb.andWhere('v.neighborhood = :neighborhood', {
+        neighborhood: filters.neighborhood,
+      });
     }
     if (filters.leaderId) {
       qb.andWhere('v.leaderId = :leaderId', { leaderId: filters.leaderId });
@@ -564,7 +685,12 @@ export class VotersService extends TenantAwareService<Voter> {
 
   async getListStats(
     tenantId: string,
-    filters: { search?: string; neighborhood?: string; leaderId?: string; gender?: string },
+    filters: {
+      search?: string;
+      neighborhood?: string;
+      leaderId?: string;
+      gender?: string;
+    },
   ): Promise<{
     total: number;
     withPhone: number;
@@ -579,10 +705,14 @@ export class VotersService extends TenantAwareService<Voter> {
         .where('v.tenantId = :tenantId', { tenantId });
 
       if (filters.search) {
-        qb.andWhere('(v.name ILIKE :q OR v.phone ILIKE :q)', { q: `%${filters.search}%` });
+        qb.andWhere('(v.name ILIKE :q OR v.phone ILIKE :q)', {
+          q: `%${filters.search}%`,
+        });
       }
       if (filters.neighborhood) {
-        qb.andWhere('v.neighborhood = :neighborhood', { neighborhood: filters.neighborhood });
+        qb.andWhere('v.neighborhood = :neighborhood', {
+          neighborhood: filters.neighborhood,
+        });
       }
       if (filters.leaderId) {
         qb.andWhere('v.leaderId = :leaderId', { leaderId: filters.leaderId });
@@ -593,30 +723,42 @@ export class VotersService extends TenantAwareService<Voter> {
       return qb;
     };
 
-    const [totalResult, withPhoneResult, withNeighborhoodResult, bairrosResult, gendersResult, top5BairrosResult] =
-      await Promise.all([
-        baseQb().select('COUNT(*)', 'count').getRawOne(),
-        baseQb().andWhere("v.phone IS NOT NULL AND v.phone != ''").select('COUNT(*)', 'count').getRawOne(),
-        baseQb().andWhere("v.neighborhood IS NOT NULL AND v.neighborhood != ''").select('COUNT(*)', 'count').getRawOne(),
-        baseQb()
-          .select('DISTINCT v.neighborhood', 'neighborhood')
-          .andWhere("v.neighborhood IS NOT NULL AND v.neighborhood != ''")
-          .orderBy('v.neighborhood', 'ASC')
-          .getRawMany(),
-        baseQb()
-          .select('DISTINCT v.gender', 'gender')
-          .andWhere("v.gender IS NOT NULL AND v.gender != ''")
-          .orderBy('v.gender', 'ASC')
-          .getRawMany(),
-        baseQb()
-          .select('v.neighborhood', 'name')
-          .addSelect('COUNT(*)', 'count')
-          .andWhere("v.neighborhood IS NOT NULL AND v.neighborhood != ''")
-          .groupBy('v.neighborhood')
-          .orderBy('count', 'DESC')
-          .limit(5)
-          .getRawMany(),
-      ]);
+    const [
+      totalResult,
+      withPhoneResult,
+      withNeighborhoodResult,
+      bairrosResult,
+      gendersResult,
+      top5BairrosResult,
+    ] = await Promise.all([
+      baseQb().select('COUNT(*)', 'count').getRawOne(),
+      baseQb()
+        .andWhere("v.phone IS NOT NULL AND v.phone != ''")
+        .select('COUNT(*)', 'count')
+        .getRawOne(),
+      baseQb()
+        .andWhere("v.neighborhood IS NOT NULL AND v.neighborhood != ''")
+        .select('COUNT(*)', 'count')
+        .getRawOne(),
+      baseQb()
+        .select('DISTINCT v.neighborhood', 'neighborhood')
+        .andWhere("v.neighborhood IS NOT NULL AND v.neighborhood != ''")
+        .orderBy('v.neighborhood', 'ASC')
+        .getRawMany(),
+      baseQb()
+        .select('DISTINCT v.gender', 'gender')
+        .andWhere("v.gender IS NOT NULL AND v.gender != ''")
+        .orderBy('v.gender', 'ASC')
+        .getRawMany(),
+      baseQb()
+        .select('v.neighborhood', 'name')
+        .addSelect('COUNT(*)', 'count')
+        .andWhere("v.neighborhood IS NOT NULL AND v.neighborhood != ''")
+        .groupBy('v.neighborhood')
+        .orderBy('count', 'DESC')
+        .limit(5)
+        .getRawMany(),
+    ]);
 
     return {
       total: parseInt(totalResult?.count ?? '0', 10),
@@ -624,7 +766,10 @@ export class VotersService extends TenantAwareService<Voter> {
       withNeighborhood: parseInt(withNeighborhoodResult?.count ?? '0', 10),
       bairros: bairrosResult.map((r: any) => r.neighborhood),
       genders: gendersResult.map((r: any) => r.gender),
-      top5Bairros: top5BairrosResult.map((r: any) => ({ name: r.name, count: parseInt(r.count, 10) })),
+      top5Bairros: top5BairrosResult.map((r: any) => ({
+        name: r.name,
+        count: parseInt(r.count, 10),
+      })),
     };
   }
 
@@ -632,9 +777,12 @@ export class VotersService extends TenantAwareService<Voter> {
     return this.votersRepo
       .createQueryBuilder('v')
       .where('v.tenantId = :tenantId', { tenantId })
-      .andWhere('(v.name ILIKE :query OR v.cpf ILIKE :query OR v.phone ILIKE :query)', {
-        query: `%${query}%`,
-      })
+      .andWhere(
+        '(v.name ILIKE :query OR v.cpf ILIKE :query OR v.phone ILIKE :query)',
+        {
+          query: `%${query}%`,
+        },
+      )
       .orderBy('v.name', 'ASC')
       .limit(50)
       .getMany();

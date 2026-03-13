@@ -43,15 +43,20 @@ export class AiService {
     @InjectRepository(Voter) private voterRepo: Repository<Voter>,
     @InjectRepository(Leader) private leaderRepo: Repository<Leader>,
     @InjectRepository(Visit) private visitRepo: Repository<Visit>,
-    @InjectRepository(HelpRecord) private helpRecordRepo: Repository<HelpRecord>,
+    @InjectRepository(HelpRecord)
+    private helpRecordRepo: Repository<HelpRecord>,
     @InjectRepository(Task) private taskRepo: Repository<Task>,
-    @InjectRepository(PoliticalContact) private contactRepo: Repository<PoliticalContact>,
-    @InjectRepository(Appointment) private appointmentRepo: Repository<Appointment>,
+    @InjectRepository(PoliticalContact)
+    private contactRepo: Repository<PoliticalContact>,
+    @InjectRepository(Appointment)
+    private appointmentRepo: Repository<Appointment>,
     @InjectRepository(StaffMember) private staffRepo: Repository<StaffMember>,
     @InjectRepository(LawProject) private projectRepo: Repository<LawProject>,
-    @InjectRepository(LegislativeBill) private billRepo: Repository<LegislativeBill>,
+    @InjectRepository(LegislativeBill)
+    private billRepo: Repository<LegislativeBill>,
     @InjectRepository(Amendment) private amendmentRepo: Repository<Amendment>,
-    @InjectRepository(VotingRecord) private votingRecordRepo: Repository<VotingRecord>,
+    @InjectRepository(VotingRecord)
+    private votingRecordRepo: Repository<VotingRecord>,
   ) {
     this.apiUrl = this.configService.get(
       'DEEPSEEK_API_URL',
@@ -113,21 +118,27 @@ export class AiService {
           .groupBy('v.supportLevel')
           .getRawMany();
 
-        const neighborhoodText = neighborhoodData.length > 0
-          ? `Top bairros: ${neighborhoodData.map((n) => `${n.neighborhood} (${n.count})`).join(', ')}`
-          : '';
+        const neighborhoodText =
+          neighborhoodData.length > 0
+            ? `Top bairros: ${neighborhoodData.map((n) => `${n.neighborhood} (${n.count})`).join(', ')}`
+            : '';
 
-        const supportText = supportData.length > 0
-          ? `Nivel de apoio: ${supportData.map((s) => `${s.level}: ${s.count}`).join(', ')}`
-          : '';
+        const supportText =
+          supportData.length > 0
+            ? `Nivel de apoio: ${supportData.map((s) => `${s.level}: ${s.count}`).join(', ')}`
+            : '';
 
-        sections.push(`ELEITORES: ${totalVoters} cadastrados. ${neighborhoodText}. ${supportText}`);
+        sections.push(
+          `ELEITORES: ${totalVoters} cadastrados. ${neighborhoodText}. ${supportText}`,
+        );
       }
 
       // Liderancas
       const totalLeaders = await this.leaderRepo.count({ where: { tenantId } });
       if (totalLeaders > 0) {
-        const activeLeaders = await this.leaderRepo.count({ where: { tenantId, active: true } });
+        const activeLeaders = await this.leaderRepo.count({
+          where: { tenantId, active: true },
+        });
         const leaderData = await this.leaderRepo
           .createQueryBuilder('l')
           .select('l.name', 'name')
@@ -140,11 +151,14 @@ export class AiService {
           .limit(10)
           .getRawMany();
 
-        const leaderText = leaderData.length > 0
-          ? `Top liderancas: ${leaderData.map((l) => `${l.name} (${l.region || 'sem regiao'}, ${l.votersCount || 0}/${l.votersGoal || 0} eleitores)`).join('; ')}`
-          : '';
+        const leaderText =
+          leaderData.length > 0
+            ? `Top liderancas: ${leaderData.map((l) => `${l.name} (${l.region || 'sem regiao'}, ${l.votersCount || 0}/${l.votersGoal || 0} eleitores)`).join('; ')}`
+            : '';
 
-        sections.push(`LIDERANCAS: ${totalLeaders} total, ${activeLeaders} ativas. ${leaderText}`);
+        sections.push(
+          `LIDERANCAS: ${totalLeaders} total, ${activeLeaders} ativas. ${leaderText}`,
+        );
       }
 
       // Visitas
@@ -159,11 +173,15 @@ export class AiService {
           .andWhere('v.date >= :since', { since: thirtyDaysAgo })
           .getCount();
 
-        sections.push(`VISITAS: ${totalVisits} total, ${recentVisits} nos ultimos 30 dias.`);
+        sections.push(
+          `VISITAS: ${totalVisits} total, ${recentVisits} nos ultimos 30 dias.`,
+        );
       }
 
       // Atendimentos
-      const totalHelp = await this.helpRecordRepo.count({ where: { tenantId } });
+      const totalHelp = await this.helpRecordRepo.count({
+        where: { tenantId },
+      });
       if (totalHelp > 0) {
         const statusData = await this.helpRecordRepo
           .createQueryBuilder('h')
@@ -184,12 +202,17 @@ export class AiService {
           .limit(5)
           .getRawMany();
 
-        const statusText = statusData.map((s) => `${s.status}: ${s.count}`).join(', ');
-        const categoryText = typeData.length > 0
-          ? `Top tipos: ${typeData.map((c) => `${c.type} (${c.count})`).join(', ')}`
-          : '';
+        const statusText = statusData
+          .map((s) => `${s.status}: ${s.count}`)
+          .join(', ');
+        const categoryText =
+          typeData.length > 0
+            ? `Top tipos: ${typeData.map((c) => `${c.type} (${c.count})`).join(', ')}`
+            : '';
 
-        sections.push(`ATENDIMENTOS: ${totalHelp} total. Status: ${statusText}. ${categoryText}`);
+        sections.push(
+          `ATENDIMENTOS: ${totalHelp} total. Status: ${statusText}. ${categoryText}`,
+        );
       }
 
       // Tarefas
@@ -203,12 +226,16 @@ export class AiService {
           .groupBy('t.status')
           .getRawMany();
 
-        const taskText = taskStatusData.map((t) => `${t.status}: ${t.count}`).join(', ');
+        const taskText = taskStatusData
+          .map((t) => `${t.status}: ${t.count}`)
+          .join(', ');
         sections.push(`TAREFAS: ${totalTasks} total. ${taskText}`);
       }
 
       // Contatos Politicos
-      const totalContacts = await this.contactRepo.count({ where: { tenantId } });
+      const totalContacts = await this.contactRepo.count({
+        where: { tenantId },
+      });
       if (totalContacts > 0) {
         const relationData = await this.contactRepo
           .createQueryBuilder('c')
@@ -227,13 +254,21 @@ export class AiService {
           .orderBy('count', 'DESC')
           .getRawMany();
 
-        const relationText = relationData.map((r) => `${r.relationship}: ${r.count}`).join(', ');
-        const roleText = roleData.map((r) => `${r.role}: ${r.count}`).join(', ');
-        sections.push(`CONTATOS POLITICOS: ${totalContacts} total. Relacao: ${relationText}. Cargos: ${roleText}`);
+        const relationText = relationData
+          .map((r) => `${r.relationship}: ${r.count}`)
+          .join(', ');
+        const roleText = roleData
+          .map((r) => `${r.role}: ${r.count}`)
+          .join(', ');
+        sections.push(
+          `CONTATOS POLITICOS: ${totalContacts} total. Relacao: ${relationText}. Cargos: ${roleText}`,
+        );
       }
 
       // Agenda
-      const totalAppointments = await this.appointmentRepo.count({ where: { tenantId } });
+      const totalAppointments = await this.appointmentRepo.count({
+        where: { tenantId },
+      });
       if (totalAppointments > 0) {
         const now = new Date();
         const upcoming = await this.appointmentRepo
@@ -244,22 +279,29 @@ export class AiService {
           .limit(5)
           .getMany();
 
-        const upcomingText = upcoming.length > 0
-          ? `Proximos compromissos: ${upcoming.map((a) => `${a.title} (${new Date(a.startDate).toLocaleDateString('pt-BR')})`).join('; ')}`
-          : '';
+        const upcomingText =
+          upcoming.length > 0
+            ? `Proximos compromissos: ${upcoming.map((a) => `${a.title} (${new Date(a.startDate).toLocaleDateString('pt-BR')})`).join('; ')}`
+            : '';
 
-        sections.push(`AGENDA: ${totalAppointments} compromissos. ${upcomingText}`);
+        sections.push(
+          `AGENDA: ${totalAppointments} compromissos. ${upcomingText}`,
+        );
       }
 
       // Equipe
       const totalStaff = await this.staffRepo.count({ where: { tenantId } });
       if (totalStaff > 0) {
-        const activeStaff = await this.staffRepo.count({ where: { tenantId, active: true } });
+        const activeStaff = await this.staffRepo.count({
+          where: { tenantId, active: true },
+        });
         sections.push(`EQUIPE: ${totalStaff} membros, ${activeStaff} ativos.`);
       }
 
       // Projetos de Lei
-      const totalProjects = await this.projectRepo.count({ where: { tenantId } });
+      const totalProjects = await this.projectRepo.count({
+        where: { tenantId },
+      });
       if (totalProjects > 0) {
         const projectStatusData = await this.projectRepo
           .createQueryBuilder('p')
@@ -269,7 +311,9 @@ export class AiService {
           .groupBy('p.status')
           .getRawMany();
 
-        const projText = projectStatusData.map((p) => `${p.status}: ${p.count}`).join(', ');
+        const projText = projectStatusData
+          .map((p) => `${p.status}: ${p.count}`)
+          .join(', ');
         sections.push(`PROJETOS DE LEI: ${totalProjects} total. ${projText}`);
       }
 
@@ -280,7 +324,9 @@ export class AiService {
       }
 
       // Emendas
-      const totalAmendments = await this.amendmentRepo.count({ where: { tenantId } });
+      const totalAmendments = await this.amendmentRepo.count({
+        where: { tenantId },
+      });
       if (totalAmendments > 0) {
         const amendmentSum = await this.amendmentRepo
           .createQueryBuilder('a')
@@ -289,14 +335,21 @@ export class AiService {
           .getRawOne();
 
         const totalValue = amendmentSum?.total
-          ? Number(amendmentSum.total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+          ? Number(amendmentSum.total).toLocaleString('pt-BR', {
+              style: 'currency',
+              currency: 'BRL',
+            })
           : 'R$ 0';
 
-        sections.push(`EMENDAS: ${totalAmendments} total, valor acumulado: ${totalValue}.`);
+        sections.push(
+          `EMENDAS: ${totalAmendments} total, valor acumulado: ${totalValue}.`,
+        );
       }
 
       // Votacoes
-      const totalVotingRecords = await this.votingRecordRepo.count({ where: { tenantId } });
+      const totalVotingRecords = await this.votingRecordRepo.count({
+        where: { tenantId },
+      });
       if (totalVotingRecords > 0) {
         const voteData = await this.votingRecordRepo
           .createQueryBuilder('v')
@@ -306,7 +359,9 @@ export class AiService {
           .groupBy('v.vote')
           .getRawMany();
 
-        const voteText = voteData.map((v) => `${v.vote}: ${v.count}`).join(', ');
+        const voteText = voteData
+          .map((v) => `${v.vote}: ${v.count}`)
+          .join(', ');
         sections.push(`VOTACOES: ${totalVotingRecords} registros. ${voteText}`);
       }
     } catch (error) {
@@ -396,7 +451,11 @@ Responda em formato JSON com a estrutura:
 
     const variation =
       dto.election1.votes > 0
-        ? (((dto.election2.votes - dto.election1.votes) / dto.election1.votes) * 100).toFixed(1)
+        ? (
+            ((dto.election2.votes - dto.election1.votes) /
+              dto.election1.votes) *
+            100
+          ).toFixed(1)
         : '0';
 
     const systemPrompt = `Você é um analista político sênior especializado em eleições brasileiras para ${profile} em ${location}. Responda em português.`;

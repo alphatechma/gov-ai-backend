@@ -27,7 +27,10 @@ export class DashboardController {
 
   @Get('chart-data')
   getChartData(@Req() req: any, @Query('period') period?: string) {
-    return this.dashboardService.getChartData(req.tenantId, period ? parseInt(period, 10) : 30);
+    return this.dashboardService.getChartData(
+      req.tenantId,
+      period ? parseInt(period, 10) : 30,
+    );
   }
 
   @Get('insights')

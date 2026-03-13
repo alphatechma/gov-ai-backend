@@ -22,7 +22,9 @@ export class ModulesService {
   ) {}
 
   findAllSystemModules() {
-    return this.systemModuleRepo.find({ order: { category: 'ASC', name: 'ASC' } });
+    return this.systemModuleRepo.find({
+      order: { category: 'ASC', name: 'ASC' },
+    });
   }
 
   async findTenantModules(tenantId: string) {

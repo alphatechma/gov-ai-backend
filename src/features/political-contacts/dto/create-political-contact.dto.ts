@@ -1,5 +1,8 @@
 import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
-import { ContactRole, ContactRelationship } from '../../../shared/enums/features';
+import {
+  ContactRole,
+  ContactRelationship,
+} from '../../../shared/enums/features';
 
 export class CreatePoliticalContactDto {
   @IsString() @IsNotEmpty() name: string;

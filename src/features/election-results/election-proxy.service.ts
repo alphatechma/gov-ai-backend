@@ -30,7 +30,11 @@ export class ElectionProxyService {
 
   // ── Elections (filtrado por tenant) ──
 
-  async listElectionsForTenant(tenant: { politicalProfile: string; state: string; city?: string }) {
+  async listElectionsForTenant(tenant: {
+    politicalProfile: string;
+    state: string;
+    city?: string;
+  }) {
     const cargo = PROFILE_TO_CARGO[tenant.politicalProfile] || '';
     const isLocal = LOCAL_PROFILES.includes(tenant.politicalProfile);
 
@@ -52,7 +56,9 @@ export class ElectionProxyService {
   async listElections(query?: Record<string, string | undefined>) {
     const params: Record<string, string> = {};
     if (query) {
-      Object.entries(query).forEach(([k, v]) => { if (v) params[k] = v; });
+      Object.entries(query).forEach(([k, v]) => {
+        if (v) params[k] = v;
+      });
     }
     const { data } = await this.client.get('/elections', { params });
     return data;
@@ -65,33 +71,45 @@ export class ElectionProxyService {
 
   // ── Import ──
 
-  async importUpload(fileBuffer: Buffer, originalname: string, metadata: { year: number; state: string; municipalityName?: string }) {
+  async importUpload(
+    fileBuffer: Buffer,
+    originalname: string,
+    metadata: { year: number; state: string; municipalityName?: string },
+  ) {
     const FormData = require('form-data');
     const form = new FormData();
     form.append('file', fileBuffer, { filename: originalname });
     form.append('year', String(metadata.year));
     form.append('state', metadata.state);
-    if (metadata.municipalityName) form.append('municipalityName', metadata.municipalityName);
+    if (metadata.municipalityName)
+      form.append('municipalityName', metadata.municipalityName);
 
-    const { data } = await this.client.post(
-      '/elections/import/upload',
-      form,
-      { headers: form.getHeaders(), timeout: 600000 },
-    );
+    const { data } = await this.client.post('/elections/import/upload', form, {
+      headers: form.getHeaders(),
+      timeout: 600000,
+    });
     return data;
   }
 
   async getTseMunicipalities(state: string) {
-    const { data } = await this.client.get(`/elections/tse/municipalities/${state}`);
+    const { data } = await this.client.get(
+      `/elections/tse/municipalities/${state}`,
+    );
     return data;
   }
 
   // ── Analysis (proxy all) ──
 
-  async analysis(electionId: string, endpoint: string, query?: Record<string, string | undefined>) {
+  async analysis(
+    electionId: string,
+    endpoint: string,
+    query?: Record<string, string | undefined>,
+  ) {
     const params = new URLSearchParams();
     if (query) {
-      Object.entries(query).forEach(([k, v]) => { if (v) params.set(k, v); });
+      Object.entries(query).forEach(([k, v]) => {
+        if (v) params.set(k, v);
+      });
     }
     const qs = params.toString();
     const url = `/elections/${electionId}/analysis/${endpoint}${qs ? `?${qs}` : ''}`;

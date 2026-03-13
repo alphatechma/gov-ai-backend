@@ -5,10 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import {
-  ContactRole,
-  ContactRelationship,
-} from '../../shared/enums/features';
+import { ContactRole, ContactRelationship } from '../../shared/enums/features';
 
 @Entity('political_contacts')
 export class PoliticalContact {

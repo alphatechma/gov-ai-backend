@@ -11,7 +11,10 @@ interface ColumnDef {
   label: string;
 }
 
-const REPORT_COLUMNS: Record<ReportType, { table: string; columns: ColumnDef[] }> = {
+const REPORT_COLUMNS: Record<
+  ReportType,
+  { table: string; columns: ColumnDef[] }
+> = {
   [ReportType.VOTERS]: {
     table: 'voters',
     columns: [
@@ -268,9 +271,7 @@ export class ReportsService {
     dto: GenerateReportDto,
     config: { table: string; columns: ColumnDef[] },
   ) {
-    const selectCols = config.columns
-      .map((c) => `"${c.column}"`)
-      .join(', ');
+    const selectCols = config.columns.map((c) => `"${c.column}"`).join(', ');
 
     let query = `SELECT ${selectCols} FROM "${config.table}" WHERE "tenantId" = $1`;
     const params: any[] = [tenantId];
