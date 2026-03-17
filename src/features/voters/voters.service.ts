@@ -438,6 +438,14 @@ export class VotersService extends TenantAwareService<Voter> {
       }
     }
 
+    // Sincronizar votersCount de todas as lideranças do tenant
+    await this.leadersRepo.query(
+      `UPDATE leaders l SET "votersCount" = (
+        SELECT COUNT(*) FROM voters v WHERE v."leaderId" = l.id::text AND v."tenantId" = $1
+      ) WHERE l."tenantId" = $1`,
+      [tenantId],
+    );
+
     // Geocodificar em background por combinacao unica de bairro+cidade+estado
     this.geocodeAllVoters(tenantId).catch((err) =>
       this.logger.error(`Erro no geocoding em background: ${err}`),

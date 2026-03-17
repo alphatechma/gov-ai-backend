@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DeepPartial } from 'typeorm';
+import { Repository, DeepPartial, FindOptionsWhere } from 'typeorm';
 import { Leader } from './leader.entity';
 import { TenantAwareService } from '../../shared/base/tenant-aware.service';
 import { UsersService } from '../../core/users/users.service';
@@ -13,6 +13,17 @@ export class LeadersService extends TenantAwareService<Leader> {
     private usersService: UsersService,
   ) {
     super(repo);
+  }
+
+  async findAll(tenantId: string, filters?: FindOptionsWhere<Leader>) {
+    // Sync votersCount before returning to ensure accuracy
+    await this.repository.query(
+      `UPDATE leaders l SET "votersCount" = (
+        SELECT COUNT(*) FROM voters v WHERE v."leaderId" = l.id::text AND v."tenantId" = $1
+      ) WHERE l."tenantId" = $1`,
+      [tenantId],
+    );
+    return super.findAll(tenantId, filters);
   }
 
   async create(
