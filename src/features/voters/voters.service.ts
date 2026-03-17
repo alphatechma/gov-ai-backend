@@ -602,6 +602,7 @@ export class VotersService extends TenantAwareService<Voter> {
       leaderId?: string;
       gender?: string;
       confidenceLevel?: string;
+      fields?: string[];
     },
   ): Promise<Buffer> {
     const qb = this.votersRepo
@@ -641,33 +642,41 @@ export class VotersService extends TenantAwareService<Voter> {
     const leaderMap = new Map<string, string>();
     for (const l of leaders) leaderMap.set(l.id, l.name);
 
+    // All available columns with key, header label, width, and value extractor
+    const allColumns: {
+      key: string;
+      header: string;
+      width: number;
+      value: (v: any) => string;
+    }[] = [
+      { key: 'lideranca', header: 'Lideranca', width: 25, value: (v) => (v.leaderId ? (leaderMap.get(v.leaderId) ?? '') : '') },
+      { key: 'nome', header: 'Nome', width: 30, value: (v) => v.name },
+      { key: 'telefone', header: 'Telefone', width: 16, value: (v) => v.phone ?? '' },
+      { key: 'email', header: 'Email', width: 25, value: (v) => v.email ?? '' },
+      { key: 'genero', header: 'Genero', width: 12, value: (v) => v.gender ?? '' },
+      { key: 'dataNascimento', header: 'Data de Nascimento', width: 18, value: (v) => (v.birthDate ? String(v.birthDate) : '') },
+      { key: 'endereco', header: 'Endereco', width: 35, value: (v) => v.address ?? '' },
+      { key: 'bairro', header: 'Bairro', width: 20, value: (v) => v.neighborhood ?? '' },
+      { key: 'cidade', header: 'Cidade', width: 20, value: (v) => v.city ?? '' },
+      { key: 'estado', header: 'Estado', width: 8, value: (v) => v.state ?? '' },
+      { key: 'cep', header: 'CEP', width: 12, value: (v) => v.zipCode ?? '' },
+      { key: 'tituloEleitor', header: 'Titulo de Eleitor', width: 16, value: (v) => v.voterRegistration ?? '' },
+      { key: 'zona', header: 'Zona', width: 8, value: (v) => v.votingZone ?? '' },
+      { key: 'secao', header: 'Secao', width: 8, value: (v) => v.votingSection ?? '' },
+      { key: 'nivelConfianca', header: 'Nivel de Confianca', width: 18, value: (v) => v.confidenceLevel ?? '' },
+      { key: 'tags', header: 'Tags', width: 20, value: (v) => (v.tags ?? []).join(', ') },
+      { key: 'observacoes', header: 'Observacoes', width: 35, value: (v) => v.notes ?? '' },
+    ];
+
+    const selectedFields = filters.fields;
+    const columns = selectedFields
+      ? allColumns.filter((c) => selectedFields.includes(c.key))
+      : allColumns;
+
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Eleitores');
 
-    const headers = [
-      'Lideranca',
-      'Nome',
-      'Telefone',
-      'Email',
-      'Genero',
-      'Data de Nascimento',
-      'Endereco',
-      'Bairro',
-      'Cidade',
-      'Estado',
-      'CEP',
-      'Titulo de Eleitor',
-      'Zona',
-      'Secao',
-      'Nivel de Confianca',
-      'Tags',
-      'Observacoes',
-    ];
-    const widths = [
-      25, 30, 16, 25, 12, 18, 35, 20, 20, 8, 12, 16, 8, 8, 18, 20, 35,
-    ];
-
-    ws.columns = headers.map((header, i) => ({ header, width: widths[i] }));
+    ws.columns = columns.map((col) => ({ header: col.header, width: col.width }));
 
     const headerRow = ws.getRow(1);
     headerRow.eachCell((cell) => {
@@ -681,25 +690,7 @@ export class VotersService extends TenantAwareService<Voter> {
     });
 
     for (const v of voters) {
-      ws.addRow([
-        v.leaderId ? (leaderMap.get(v.leaderId) ?? '') : '',
-        v.name,
-        v.phone ?? '',
-        v.email ?? '',
-        v.gender ?? '',
-        v.birthDate ? String(v.birthDate) : '',
-        v.address ?? '',
-        v.neighborhood ?? '',
-        v.city ?? '',
-        v.state ?? '',
-        v.zipCode ?? '',
-        v.voterRegistration ?? '',
-        v.votingZone ?? '',
-        v.votingSection ?? '',
-        v.confidenceLevel ?? '',
-        (v.tags ?? []).join(', '),
-        v.notes ?? '',
-      ]);
+      ws.addRow(columns.map((col) => col.value(v)));
     }
 
     const arrayBuffer = await wb.xlsx.writeBuffer();

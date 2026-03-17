@@ -129,6 +129,7 @@ export class VotersController {
     @Query('leaderId') leaderId?: string,
     @Query('gender') gender?: string,
     @Query('confidenceLevel') confidenceLevel?: string,
+    @Query('fields') fields?: string,
   ) {
     const buffer = await this.votersService.exportToExcel(req.tenantId, {
       search,
@@ -136,6 +137,7 @@ export class VotersController {
       leaderId,
       gender,
       confidenceLevel,
+      fields: fields ? fields.split(',') : undefined,
     });
     res.set({
       'Content-Type':
