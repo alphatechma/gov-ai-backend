@@ -119,13 +119,10 @@ export class DashboardService {
     };
   }
 
-  async getBirthdays(tenantId: string) {
+  async getBirthdays(tenantId: string, period: number = 7) {
     const enabledKeys = await this.getEnabledModuleKeys(tenantId);
     const today = new Date();
     const todayMD = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-    const nextWeek = new Date(today);
-    nextWeek.setDate(nextWeek.getDate() + 7);
 
     const voterBirthdays = enabledKeys.has('voters')
       ? await this.dataSource.query(
@@ -163,7 +160,7 @@ export class DashboardService {
         (thisYearBd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
       );
 
-      if (personMD === todayMD || (diff >= 0 && diff <= 7)) {
+      if (personMD === todayMD || (diff >= 0 && diff <= period)) {
         result.push({
           id: person.id,
           name: person.name,

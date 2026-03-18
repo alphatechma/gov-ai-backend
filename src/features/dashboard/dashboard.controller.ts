@@ -21,8 +21,11 @@ export class DashboardController {
   }
 
   @Get('birthdays')
-  getBirthdays(@Req() req: any) {
-    return this.dashboardService.getBirthdays(req.tenantId);
+  getBirthdays(@Req() req: any, @Query('period') period?: string) {
+    return this.dashboardService.getBirthdays(
+      req.tenantId,
+      period ? parseInt(period, 10) : 7,
+    );
   }
 
   @Get('chart-data')
