@@ -334,20 +334,11 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
     const typeSet = new Set(existingTypes.map((t) => t.name.toLowerCase()));
     const newTypesToCreate: string[] = [];
 
-    // Pre-load existing help records for duplicate detection (type + voterId + date)
-    const existingRecords = await this.repository.find({ where: { tenantId } });
-    const existingKey = (type: string, voterId: string | null, date: string | null) =>
-      `${type.toLowerCase()}|${voterId ?? ''}|${date ?? ''}`;
-    const existingMap = new Map<string, string>();
-    for (const r of existingRecords) {
-      existingMap.set(existingKey(r.type, r.voterId, r.date), r.id);
-    }
-
     let imported = 0;
-    let updated = 0;
     let skipped = 0;
     const errors: string[] = [];
-    const toInsert: Record<string, any>[] = [];
+    const batch: Record<string, any>[] = [];
+    const BATCH_SIZE = 500;
     const votersToUpdateNeighborhood = new Map<string, string>();
 
     for (let i = 0; i < rows.length; i++) {
@@ -439,38 +430,35 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
         typeSet.add(mapped.type.toLowerCase());
       }
 
-      // Check for existing record (upsert)
-      const key = existingKey(mapped.type, mapped.voterId ?? null, mapped.date ?? null);
-      const existingId = existingMap.get(key);
+      mapped.tenantId = tenantId;
+      batch.push(mapped);
 
-      if (existingId) {
-        // Update existing record
+      if (batch.length >= BATCH_SIZE) {
         try {
-          const updateData: Record<string, any> = {};
-          if (mapped.category) updateData.category = mapped.category;
-          if (mapped.status) updateData.status = mapped.status;
-          if (mapped.observations) updateData.observations = mapped.observations;
-          if (mapped.leaderId) updateData.leaderId = mapped.leaderId;
-          if (Object.keys(updateData).length > 0) {
-            await this.repository.update(existingId, updateData);
-          }
-          updated++;
+          await this.repository
+            .createQueryBuilder()
+            .insert()
+            .values(batch)
+            .execute();
+          imported += batch.length;
         } catch {
-          skipped++;
-          if (errors.length < 20)
-            errors.push(`Erro ao atualizar atendimento "${mapped.type}" (linha ${i + 2})`);
+          for (const item of batch) {
+            try {
+              await this.repository.save(this.repository.create(item as any));
+              imported++;
+            } catch {
+              skipped++;
+              if (errors.length < 20)
+                errors.push(`Erro ao salvar atendimento "${item.type}"`);
+            }
+          }
         }
-      } else {
-        mapped.tenantId = tenantId;
-        toInsert.push(mapped);
-        existingMap.set(key, 'pending');
+        batch.length = 0;
       }
     }
 
-    // Batch insert new records
-    const BATCH_SIZE = 500;
-    for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
-      const batch = toInsert.slice(i, i + BATCH_SIZE);
+    // Flush remaining batch
+    if (batch.length > 0) {
       try {
         await this.repository
           .createQueryBuilder()
@@ -510,7 +498,6 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
 
     return {
       imported,
-      updated,
       skipped,
       total: rows.length,
       errors: errors.slice(0, 20),
