@@ -45,6 +45,14 @@ export class ModuleAccessGuard implements CanActivate {
       );
     }
 
+    if (user.allowedModules && Array.isArray(user.allowedModules)) {
+      if (!user.allowedModules.includes(requiredModule)) {
+        throw new ForbiddenException(
+          `Você não tem permissão para acessar o módulo "${requiredModule}"`,
+        );
+      }
+    }
+
     return true;
   }
 }

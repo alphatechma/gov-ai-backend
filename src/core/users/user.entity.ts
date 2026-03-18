@@ -48,6 +48,9 @@ export class User {
   @Column({ nullable: true })
   avatarUrl: string;
 
+  @Column({ type: 'jsonb', nullable: true })
+  allowedModules: string[] | null;
+
   @Column({ default: true })
   active: boolean;
 

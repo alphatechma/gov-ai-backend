@@ -35,6 +35,7 @@ export class UsersService {
         tenantId: true,
         lastLoginAt: true,
         createdAt: true,
+        allowedModules: true,
         updatedAt: true,
       },
     });
@@ -59,6 +60,7 @@ export class UsersService {
         tenantId: true,
         lastLoginAt: true,
         createdAt: true,
+        allowedModules: true,
         updatedAt: true,
       },
     });

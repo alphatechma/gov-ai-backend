@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsEmail,
   IsEnum,
   IsNotEmpty,
@@ -35,4 +36,8 @@ export class CreateUserDto {
   @IsString()
   @IsOptional()
   cpf?: string;
+
+  @IsArray()
+  @IsOptional()
+  allowedModules?: string[];
 }

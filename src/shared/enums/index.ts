@@ -17,6 +17,7 @@ export enum UserRole {
   ADVISOR = 'ADVISOR',
   LEADER = 'LEADER',
   VIEWER = 'VIEWER',
+  ATTENDANT = 'ATTENDANT',
 }
 
 export enum ModuleCategory {

@@ -168,3 +168,10 @@ export enum RequestStatus {
   ATENDIDO = 'ATENDIDO',
   NEGADO = 'NEGADO',
 }
+
+export enum VisitStatus {
+  AGENDADA = 'AGENDADA',
+  EM_ATENDIMENTO = 'EM_ATENDIMENTO',
+  CONCLUIDA = 'CONCLUIDA',
+  CANCELADA = 'CANCELADA',
+}

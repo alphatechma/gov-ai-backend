@@ -49,9 +49,14 @@ export class AuthService {
     user.lastLoginAt = new Date();
     await this.usersRepo.save(user);
 
-    const enabledModules = user.tenantId
+    let enabledModules = user.tenantId
       ? await this.getEnabledModules(user.tenantId)
       : [];
+
+    if (user.allowedModules && user.allowedModules.length > 0) {
+      const allowed = user.allowedModules;
+      enabledModules = enabledModules.filter((m) => allowed.includes(m));
+    }
 
     const tokens = await this.generateTokens(user, enabledModules);
 
@@ -63,6 +68,7 @@ export class AuthService {
         email: user.email,
         role: user.role,
         tenantId: user.tenantId,
+        allowedModules: user.allowedModules,
         tenant: user.tenant
           ? {
               id: user.tenant.id,
@@ -122,9 +128,14 @@ export class AuthService {
       throw new UnauthorizedException('Usuário inativo ou não encontrado');
     }
 
-    const enabledModules = user.tenantId
+    let enabledModules = user.tenantId
       ? await this.getEnabledModules(user.tenantId)
       : [];
+
+    if (user.allowedModules && user.allowedModules.length > 0) {
+      const allowed = user.allowedModules;
+      enabledModules = enabledModules.filter((m) => allowed.includes(m));
+    }
 
     return this.generateTokens(user, enabledModules);
   }
@@ -192,6 +203,7 @@ export class AuthService {
       role: user.role,
       tenantId: user.tenantId,
       enabledModules,
+      allowedModules: user.allowedModules,
     };
 
     const [accessToken, refreshToken] = await Promise.all([

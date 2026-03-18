@@ -23,6 +23,21 @@ import { RequiresModule } from '../../shared/decorators/requires-module.decorato
 export class VisitsController {
   constructor(private service: VisitsService) {}
 
+  @Get('voters')
+  getVoters(@Req() req: any) {
+    return this.service.getVotersForSelect(req.tenantId);
+  }
+
+  @Get('leaders')
+  getLeaders(@Req() req: any) {
+    return this.service.getLeadersForSelect(req.tenantId);
+  }
+
+  @Post('leaders')
+  createLeader(@Req() req: any, @Body('name') name: string) {
+    return this.service.createLeader(req.tenantId, name);
+  }
+
   @Get()
   findAll(@Req() req: any) {
     return this.service.findAll(req.tenantId);

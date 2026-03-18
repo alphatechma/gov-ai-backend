@@ -1,6 +1,8 @@
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
+  IsEnum,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -8,6 +10,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { UserRole } from '../../../shared/enums';
 
 export class CreateStaffDto {
   @IsString() @IsNotEmpty() name: string;
@@ -19,4 +22,6 @@ export class CreateStaffDto {
   @IsDateString() @IsOptional() startDate?: string;
   @IsBoolean() @IsOptional() createAccess?: boolean;
   @IsString() @MinLength(6) @IsOptional() password?: string;
+  @IsEnum(UserRole) @IsOptional() accessRole?: UserRole;
+  @IsArray() @IsOptional() allowedModules?: string[];
 }

@@ -20,9 +20,12 @@ export class StaffService extends TenantAwareService<StaffMember> {
     dto: DeepPartial<StaffMember> & {
       createAccess?: boolean;
       password?: string;
+      accessRole?: UserRole;
+      allowedModules?: string[];
     },
   ) {
-    const { createAccess, password, ...staffData } = dto;
+    const { createAccess, password, accessRole, allowedModules, ...staffData } =
+      dto;
 
     if (createAccess) {
       if (!staffData.email) {
@@ -34,13 +37,21 @@ export class StaffService extends TenantAwareService<StaffMember> {
         );
       }
 
+      const role = accessRole || UserRole.ADVISOR;
+
+      let modules: string[] | undefined = allowedModules;
+      if (role === UserRole.ATTENDANT) {
+        modules = modules && modules.length > 0 ? modules : ['visits'];
+      }
+
       const user = await this.usersService.create({
         name: staffData.name as string,
         email: staffData.email,
         password: password,
-        role: UserRole.ADVISOR,
+        role,
         tenantId,
         phone: staffData.phone as string,
+        allowedModules: modules,
       });
 
       staffData.userId = user.id;
