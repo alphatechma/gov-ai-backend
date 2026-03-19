@@ -236,9 +236,55 @@ export class VotersService extends TenantAwareService<Voter> {
       .getRawMany();
   }
 
-  async importFromExcel(tenantId: string, buffer: Buffer) {
+  /**
+   * Normaliza nome para comparação: uppercase, sem acentos, sem espaços extras.
+   */
+  private normalizeName(name: string): string {
+    return name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, '')
+      .toUpperCase();
+  }
+
+  /**
+   * Normaliza telefone para comparação: só dígitos.
+   */
+  private normalizePhone(phone: string): string {
+    return phone.replace(/[\s\-\(\)\.]/g, '');
+  }
+
+  /**
+   * Gera chave de deduplicação a partir de nome + telefone normalizados.
+   */
+  private buildDuplicateKey(name: string, phone: string): string {
+    return `${this.normalizeName(name)}|${this.normalizePhone(phone)}`;
+  }
+
+  /**
+   * Carrega índice de eleitores existentes (nome + telefone) do tenant.
+   */
+  private async buildDuplicateIndex(tenantId: string): Promise<Set<string>> {
+    const existing: { name: string; phone: string }[] = await this.votersRepo
+      .createQueryBuilder('v')
+      .select(['v.name', 'v.phone'])
+      .where('v.tenantId = :tenantId', { tenantId })
+      .andWhere('v.phone IS NOT NULL')
+      .andWhere("v.phone != ''")
+      .getMany();
+
+    const index = new Set<string>();
+    for (const v of existing) {
+      index.add(this.buildDuplicateKey(v.name, v.phone));
+    }
+    return index;
+  }
+
+  /**
+   * Parseia o workbook e retorna as linhas normalizadas.
+   */
+  private parseWorkbook(buffer: Buffer): Record<string, any>[] {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
-    // Try to find a data sheet (skip summary sheets)
     const dataSheetNames = ['Cadastro de Eleitores', 'Eleitores'];
     let sheet =
       workbook.Sheets[
@@ -251,12 +297,10 @@ export class VotersService extends TenantAwareService<Voter> {
     if (rows.length === 0)
       throw new BadRequestException('Nenhum registro encontrado na planilha');
 
-    // Detect report format: if any of the first rows have __EMPTY keys, it's a report
     const isReport = rows
       .slice(0, 5)
       .some((r) => Object.keys(r).some((k) => k.startsWith('__EMPTY')));
     if (isReport) {
-      // Find the header row: the one with "Nome" or "Nome Completo" as a VALUE and multiple columns
       const headerIdx = rows.findIndex((r) => {
         const vals = Object.values(r).map((v) =>
           String(v).toLowerCase().trim(),
@@ -288,6 +332,83 @@ export class VotersService extends TenantAwareService<Voter> {
         });
       }
     }
+
+    return rows;
+  }
+
+  /**
+   * Mapeia uma linha do Excel para os campos da entidade.
+   */
+  private mapRow(
+    row: Record<string, any>,
+    columnMap: Record<string, string>,
+  ): Record<string, any> {
+    const mapped: Record<string, any> = {};
+    for (const [header, value] of Object.entries(row)) {
+      const key = columnMap[header.toLowerCase().trim()];
+      if (
+        key &&
+        value !== null &&
+        value !== undefined &&
+        String(value).trim() !== ''
+      ) {
+        mapped[key] = String(value).trim();
+      }
+    }
+    return mapped;
+  }
+
+  /**
+   * Parseia birthDate de serial Excel ou DD/MM/YYYY.
+   */
+  private parseBirthDate(raw: string): string {
+    const num = Number(raw);
+    if (!isNaN(num) && num > 10000) {
+      const date = XLSX.SSF.parse_date_code(num);
+      if (date) {
+        return `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
+      }
+    }
+    const parts = raw.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (parts) {
+      return `${parts[3]}-${parts[2].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+    }
+    return raw;
+  }
+
+  /**
+   * Insere batch no banco com fallback individual.
+   */
+  private async flushBatch(
+    batch: Record<string, any>[],
+    errors: string[],
+  ): Promise<{ imported: number; failed: number }> {
+    let imported = 0;
+    let failed = 0;
+    try {
+      await this.votersRepo
+        .createQueryBuilder()
+        .insert()
+        .values(batch)
+        .execute();
+      imported = batch.length;
+    } catch {
+      for (const item of batch) {
+        try {
+          await this.votersRepo.save(this.votersRepo.create(item as any));
+          imported++;
+        } catch {
+          failed++;
+          if (errors.length < 20)
+            errors.push(`Erro ao salvar "${item.name}"`);
+        }
+      }
+    }
+    return { imported, failed };
+  }
+
+  async importFromExcel(tenantId: string, buffer: Buffer) {
+    const rows = this.parseWorkbook(buffer);
 
     const COLUMN_MAP: Record<string, string> = {
       nome: 'name',
@@ -324,27 +445,18 @@ export class VotersService extends TenantAwareService<Voter> {
       leaderByName.set(l.name.toLowerCase().trim(), l.id);
     }
 
+    // Build duplicate index (nome + telefone normalizados)
+    const duplicateIndex = await this.buildDuplicateIndex(tenantId);
+
     let imported = 0;
     let skipped = 0;
+    let duplicates = 0;
     const errors: string[] = [];
     const batch: Record<string, any>[] = [];
     const BATCH_SIZE = 500;
 
     for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const mapped: Record<string, any> = {};
-
-      for (const [header, value] of Object.entries(row)) {
-        const key = COLUMN_MAP[header.toLowerCase().trim()];
-        if (
-          key &&
-          value !== null &&
-          value !== undefined &&
-          String(value).trim() !== ''
-        ) {
-          mapped[key] = String(value).trim();
-        }
-      }
+      const mapped = this.mapRow(rows[i], COLUMN_MAP);
 
       if (!mapped.name) {
         skipped++;
@@ -352,22 +464,23 @@ export class VotersService extends TenantAwareService<Voter> {
         continue;
       }
 
-      // Handle Excel date serial numbers for birthDate
-      if (mapped.birthDate) {
-        const num = Number(mapped.birthDate);
-        if (!isNaN(num) && num > 10000) {
-          const date = XLSX.SSF.parse_date_code(num);
-          if (date) {
-            mapped.birthDate = `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
-          }
-        } else {
-          const parts = mapped.birthDate.match(
-            /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/,
-          );
-          if (parts) {
-            mapped.birthDate = `${parts[3]}-${parts[2].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
-          }
+      // Verificar duplicidade por nome + telefone
+      if (mapped.phone) {
+        const dupKey = this.buildDuplicateKey(mapped.name, mapped.phone);
+        if (duplicateIndex.has(dupKey)) {
+          duplicates++;
+          if (errors.length < 20)
+            errors.push(
+              `Linha ${i + 2}: eleitor "${mapped.name}" já cadastrado (nome + telefone)`,
+            );
+          continue;
         }
+        // Adicionar ao índice para detectar duplicatas dentro do próprio arquivo
+        duplicateIndex.add(dupKey);
+      }
+
+      if (mapped.birthDate) {
+        mapped.birthDate = this.parseBirthDate(mapped.birthDate);
       }
 
       // Resolve leader by name: match existing or create new
@@ -391,51 +504,18 @@ export class VotersService extends TenantAwareService<Voter> {
       batch.push(mapped);
 
       if (batch.length >= BATCH_SIZE) {
-        try {
-          await this.votersRepo
-            .createQueryBuilder()
-            .insert()
-            .values(batch)
-            .execute();
-          imported += batch.length;
-        } catch {
-          // Fallback: try one by one to identify bad rows
-          for (const item of batch) {
-            try {
-              await this.votersRepo.save(this.votersRepo.create(item as any));
-              imported++;
-            } catch {
-              skipped++;
-              if (errors.length < 20)
-                errors.push(`Erro ao salvar "${item.name}"`);
-            }
-          }
-        }
+        const result = await this.flushBatch(batch, errors);
+        imported += result.imported;
+        skipped += result.failed;
         batch.length = 0;
       }
     }
 
     // Flush remaining batch
     if (batch.length > 0) {
-      try {
-        await this.votersRepo
-          .createQueryBuilder()
-          .insert()
-          .values(batch)
-          .execute();
-        imported += batch.length;
-      } catch {
-        for (const item of batch) {
-          try {
-            await this.votersRepo.save(this.votersRepo.create(item as any));
-            imported++;
-          } catch {
-            skipped++;
-            if (errors.length < 20)
-              errors.push(`Erro ao salvar "${item.name}"`);
-          }
-        }
-      }
+      const result = await this.flushBatch(batch, errors);
+      imported += result.imported;
+      skipped += result.failed;
     }
 
     // Sincronizar votersCount de todas as lideranças do tenant
@@ -454,6 +534,7 @@ export class VotersService extends TenantAwareService<Voter> {
     return {
       imported,
       skipped,
+      duplicates,
       total: rows.length,
       errors: errors.slice(0, 20),
     };
