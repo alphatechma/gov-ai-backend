@@ -141,6 +141,15 @@ const SYSTEM_MODULES: Partial<SystemModule>[] = [
     isCore: false,
     isAddon: false,
   },
+  {
+    key: 'cabinet-visits',
+    name: 'Recepção do Gabinete',
+    category: ModuleCategory.GABINETE,
+    icon: 'DoorOpen',
+    availableFor: ALL_PROFILES,
+    isCore: false,
+    isAddon: false,
+  },
 
   // GESTAO
   {

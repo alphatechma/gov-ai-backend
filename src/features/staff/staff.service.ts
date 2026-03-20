@@ -43,6 +43,10 @@ export class StaffService extends TenantAwareService<StaffMember> {
       if (role === UserRole.ATTENDANT) {
         modules = modules && modules.length > 0 ? modules : ['visits'];
       }
+      if (role === UserRole.RECEPTIONIST) {
+        modules =
+          modules && modules.length > 0 ? modules : ['cabinet-visits'];
+      }
 
       const user = await this.usersService.create({
         name: staffData.name as string,

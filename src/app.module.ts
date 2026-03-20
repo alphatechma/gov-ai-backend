@@ -38,6 +38,7 @@ import { AiModule } from './features/ai/ai.module';
 import { ReportsModule } from './features/reports/reports.module';
 import { DashboardModule } from './features/dashboard/dashboard.module';
 import { WhatsappModule } from './features/whatsapp/whatsapp.module';
+import { CabinetVisitsModule } from './features/cabinet-visits/cabinet-visits.module';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { WhatsappModule } from './features/whatsapp/whatsapp.module';
     ReportsModule,
     DashboardModule,
     WhatsappModule,
+    CabinetVisitsModule,
   ],
 })
 export class AppModule implements OnModuleInit {

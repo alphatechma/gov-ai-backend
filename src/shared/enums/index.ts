@@ -18,6 +18,7 @@ export enum UserRole {
   LEADER = 'LEADER',
   VIEWER = 'VIEWER',
   ATTENDANT = 'ATTENDANT',
+  RECEPTIONIST = 'RECEPTIONIST',
 }
 
 export enum ModuleCategory {
