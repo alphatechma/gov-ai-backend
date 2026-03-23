@@ -61,7 +61,7 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @Roles(UserRole.SUPER_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN)
   remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: any) {
     const tenantId = user.role === UserRole.SUPER_ADMIN ? undefined : user.tenantId;
     return this.usersService.remove(id, tenantId);

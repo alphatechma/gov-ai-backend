@@ -98,6 +98,10 @@ export class UsersService {
       if (existing) throw new ConflictException('Email já cadastrado');
     }
 
+    if (dto.password) {
+      dto.password = await bcrypt.hash(dto.password, 10);
+    }
+
     Object.assign(user, dto);
     await this.usersRepo.save(user);
     return this.findOne(id);
