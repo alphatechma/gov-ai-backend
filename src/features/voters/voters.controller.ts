@@ -36,17 +36,23 @@ export class VotersController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
-    @Query('neighborhood') neighborhood?: string,
-    @Query('leaderId') leaderId?: string,
+    @Query('neighborhood') neighborhood?: string | string[],
+    @Query('leaderId') leaderId?: string | string[],
     @Query('gender') gender?: string,
     @Query('confidenceLevel') confidenceLevel?: string,
   ) {
+    const neighborhoods = neighborhood
+      ? Array.isArray(neighborhood) ? neighborhood : [neighborhood]
+      : undefined;
+    const leaderIds = leaderId
+      ? Array.isArray(leaderId) ? leaderId : [leaderId]
+      : undefined;
     return this.votersService.findAllPaginated(req.tenantId, {
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
       search,
-      neighborhood,
-      leaderId,
+      neighborhoods,
+      leaderIds,
       gender,
       confidenceLevel,
     });
@@ -56,15 +62,21 @@ export class VotersController {
   getListStats(
     @Req() req: any,
     @Query('search') search?: string,
-    @Query('neighborhood') neighborhood?: string,
-    @Query('leaderId') leaderId?: string,
+    @Query('neighborhood') neighborhood?: string | string[],
+    @Query('leaderId') leaderId?: string | string[],
     @Query('gender') gender?: string,
     @Query('confidenceLevel') confidenceLevel?: string,
   ) {
+    const neighborhoods = neighborhood
+      ? Array.isArray(neighborhood) ? neighborhood : [neighborhood]
+      : undefined;
+    const leaderIds = leaderId
+      ? Array.isArray(leaderId) ? leaderId : [leaderId]
+      : undefined;
     return this.votersService.getListStats(req.tenantId, {
       search,
-      neighborhood,
-      leaderId,
+      neighborhoods,
+      leaderIds,
       gender,
       confidenceLevel,
     });
@@ -125,16 +137,22 @@ export class VotersController {
     @Req() req: any,
     @Res() res: Response,
     @Query('search') search?: string,
-    @Query('neighborhood') neighborhood?: string,
-    @Query('leaderId') leaderId?: string,
+    @Query('neighborhood') neighborhood?: string | string[],
+    @Query('leaderId') leaderId?: string | string[],
     @Query('gender') gender?: string,
     @Query('confidenceLevel') confidenceLevel?: string,
     @Query('fields') fields?: string,
   ) {
+    const neighborhoods = neighborhood
+      ? Array.isArray(neighborhood) ? neighborhood : [neighborhood]
+      : undefined;
+    const leaderIds = leaderId
+      ? Array.isArray(leaderId) ? leaderId : [leaderId]
+      : undefined;
     const buffer = await this.votersService.exportToExcel(req.tenantId, {
       search,
-      neighborhood,
-      leaderId,
+      neighborhoods,
+      leaderIds,
       gender,
       confidenceLevel,
       fields: fields ? fields.split(',') : undefined,

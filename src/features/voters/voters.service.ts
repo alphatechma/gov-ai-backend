@@ -679,8 +679,8 @@ export class VotersService extends TenantAwareService<Voter> {
     tenantId: string,
     filters: {
       search?: string;
-      neighborhood?: string;
-      leaderId?: string;
+      neighborhoods?: string[];
+      leaderIds?: string[];
       gender?: string;
       confidenceLevel?: string;
       fields?: string[];
@@ -696,13 +696,11 @@ export class VotersService extends TenantAwareService<Voter> {
         q: `%${filters.search}%`,
       });
     }
-    if (filters.neighborhood) {
-      qb.andWhere('v.neighborhood = :neighborhood', {
-        neighborhood: filters.neighborhood,
-      });
+    if (filters.neighborhoods?.length) {
+      qb.andWhere('v.neighborhood IN (:...neighborhoods)', { neighborhoods: filters.neighborhoods });
     }
-    if (filters.leaderId) {
-      qb.andWhere('v.leaderId = :leaderId', { leaderId: filters.leaderId });
+    if (filters.leaderIds?.length) {
+      qb.andWhere('v.leaderId IN (:...leaderIds)', { leaderIds: filters.leaderIds });
     }
     if (filters.gender) {
       qb.andWhere('v.gender = :gender', { gender: filters.gender });
@@ -784,8 +782,8 @@ export class VotersService extends TenantAwareService<Voter> {
       page?: number;
       limit?: number;
       search?: string;
-      neighborhood?: string;
-      leaderId?: string;
+      neighborhoods?: string[];
+      leaderIds?: string[];
       gender?: string;
       confidenceLevel?: string;
     },
@@ -803,13 +801,11 @@ export class VotersService extends TenantAwareService<Voter> {
         q: `%${filters.search}%`,
       });
     }
-    if (filters.neighborhood) {
-      qb.andWhere('v.neighborhood = :neighborhood', {
-        neighborhood: filters.neighborhood,
-      });
+    if (filters.neighborhoods?.length) {
+      qb.andWhere('v.neighborhood IN (:...neighborhoods)', { neighborhoods: filters.neighborhoods });
     }
-    if (filters.leaderId) {
-      qb.andWhere('v.leaderId = :leaderId', { leaderId: filters.leaderId });
+    if (filters.leaderIds?.length) {
+      qb.andWhere('v.leaderId IN (:...leaderIds)', { leaderIds: filters.leaderIds });
     }
     if (filters.gender) {
       qb.andWhere('v.gender = :gender', { gender: filters.gender });
@@ -831,8 +827,8 @@ export class VotersService extends TenantAwareService<Voter> {
     tenantId: string,
     filters: {
       search?: string;
-      neighborhood?: string;
-      leaderId?: string;
+      neighborhoods?: string[];
+      leaderIds?: string[];
       gender?: string;
       confidenceLevel?: string;
     },
@@ -854,13 +850,11 @@ export class VotersService extends TenantAwareService<Voter> {
           q: `%${filters.search}%`,
         });
       }
-      if (filters.neighborhood) {
-        qb.andWhere('v.neighborhood = :neighborhood', {
-          neighborhood: filters.neighborhood,
-        });
+      if (filters.neighborhoods?.length) {
+        qb.andWhere('v.neighborhood IN (:...neighborhoods)', { neighborhoods: filters.neighborhoods });
       }
-      if (filters.leaderId) {
-        qb.andWhere('v.leaderId = :leaderId', { leaderId: filters.leaderId });
+      if (filters.leaderIds?.length) {
+        qb.andWhere('v.leaderId IN (:...leaderIds)', { leaderIds: filters.leaderIds });
       }
       if (filters.gender) {
         qb.andWhere('v.gender = :gender', { gender: filters.gender });
