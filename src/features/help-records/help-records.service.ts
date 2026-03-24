@@ -54,7 +54,7 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
       .where('h."tenantId" = :tenantId', { tenantId });
 
     if (filters.search) {
-      qb.andWhere('(h.type ILIKE :q OR h.observations ILIKE :q)', {
+      qb.andWhere('(h.type ILIKE :q OR h.observations ILIKE :q OR v.name ILIKE :q)', {
         q: `%${filters.search}%`,
       });
     }
