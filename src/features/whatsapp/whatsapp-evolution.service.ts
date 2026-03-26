@@ -863,20 +863,22 @@ export class WhatsappEvolutionService
 
     const normalizedPhone = this.normalizePhone(phone);
 
-    // Determine media type for Evolution API
+    // Determine media type for Evolution API (must be capitalized)
     const isImage = mimetype.startsWith('image/');
     const isVideo = mimetype.startsWith('video/');
     const isAudio = mimetype.startsWith('audio/');
-    let mediatype = 'document';
-    if (isImage) mediatype = 'image';
-    else if (isVideo) mediatype = 'video';
-    else if (isAudio) mediatype = 'audio';
+    let mediatype = 'Document';
+    let internalType = 'document';
+    if (isImage) { mediatype = 'Image'; internalType = 'image'; }
+    else if (isVideo) { mediatype = 'Video'; internalType = 'video'; }
+    else if (isAudio) { mediatype = 'Audio'; internalType = 'audio'; }
 
     const base64 = mediaBuffer.toString('base64');
 
     const body: any = {
       number: normalizedPhone,
       mediatype,
+      mimetype,
       media: `data:${mimetype};base64,${base64}`,
       fileName: filename,
     };
@@ -904,8 +906,8 @@ export class WhatsappEvolutionService
       remoteJid: `${normalizedPhone}@s.whatsapp.net`,
       remotePhone: normalizedPhone,
       remoteName: existingMsg?.remoteName || undefined,
-      content: caption || `[${mediatype === 'image' ? 'imagem' : mediatype}]`,
-      type: mediatype,
+      content: caption || `[${internalType === 'image' ? 'imagem' : internalType}]`,
+      type: internalType,
       direction: MessageDirection.OUTBOUND,
       status: MessageStatus.SENT,
       externalId: response?.key?.id || undefined,
