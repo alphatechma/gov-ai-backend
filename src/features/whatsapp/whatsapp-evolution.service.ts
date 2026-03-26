@@ -228,8 +228,8 @@ export class WhatsappEvolutionService
     content: string,
     quotedId?: string,
   ) {
-    const inst = this.instances.get(tenantId);
-    if (!inst || inst.status !== ConnectionStatus.CONNECTED) {
+    const inst = await this.ensureInstance(tenantId);
+    if (!inst) {
       throw new Error('WhatsApp não conectado');
     }
 
@@ -392,7 +392,10 @@ export class WhatsappEvolutionService
       }
 
       return { status, qrCode: null };
-    } catch {
+    } catch (err) {
+      this.logger.warn(
+        `getStatus: failed to fetch state for tenant ${tenantId} instance ${conn.instanceName}: ${err.message}`,
+      );
       return { status: 'DISCONNECTED', qrCode: null };
     }
   }
@@ -750,6 +753,27 @@ export class WhatsappEvolutionService
     }
   }
 
+  /**
+   * Ensure instance is in the in-memory map. If not, try lazy-restoring from DB + Evolution API.
+   */
+  private async ensureInstance(tenantId: string): Promise<{
+    instanceName: string;
+    instanceToken: string;
+    status: ConnectionStatus;
+  } | null> {
+    let inst = this.instances.get(tenantId);
+    if (inst && inst.status === ConnectionStatus.CONNECTED) return inst;
+
+    // Try lazy restore via getStatus (which rebuilds cache from DB + Evolution API)
+    const { status } = await this.getStatus(tenantId);
+    if (status === ConnectionStatus.CONNECTED) {
+      inst = this.instances.get(tenantId);
+      if (inst) return inst;
+    }
+
+    return null;
+  }
+
   private async fetchConnectionState(
     instanceName: string,
     apiKey: string,
@@ -832,8 +856,8 @@ export class WhatsappEvolutionService
     filename: string,
     caption?: string,
   ) {
-    const inst = this.instances.get(tenantId);
-    if (!inst || inst.status !== ConnectionStatus.CONNECTED) {
+    const inst = await this.ensureInstance(tenantId);
+    if (!inst) {
       throw new Error('WhatsApp não conectado');
     }
 
@@ -898,7 +922,7 @@ export class WhatsappEvolutionService
     messageExternalId: string,
     remoteJid: string,
   ): Promise<{ base64: string; mimetype: string } | null> {
-    const inst = this.instances.get(tenantId);
+    const inst = await this.ensureInstance(tenantId);
     if (!inst) return null;
 
     try {
