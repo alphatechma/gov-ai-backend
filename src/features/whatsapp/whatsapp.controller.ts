@@ -8,9 +8,13 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt-auth.guard';
 import { ModuleAccessGuard } from '../../shared/guards/module-access.guard';
 import { RequiresModule } from '../../shared/decorators/requires-module.decorator';
@@ -65,6 +69,26 @@ export class WhatsappController {
       dto.phone,
       dto.content,
       dto.quotedId,
+    );
+  }
+
+  @Post('send-media')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 16 * 1024 * 1024 } }))
+  sendMedia(
+    @Req() req: any,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('phone') phone: string,
+    @Body('caption') caption?: string,
+  ) {
+    if (!file) throw new BadRequestException('Arquivo é obrigatório');
+    if (!phone) throw new BadRequestException('Telefone é obrigatório');
+    return this.whatsappService.sendMedia(
+      req.tenantId,
+      phone,
+      { buffer: file.buffer, mimetype: file.mimetype, originalname: file.originalname },
+      caption,
     );
   }
 

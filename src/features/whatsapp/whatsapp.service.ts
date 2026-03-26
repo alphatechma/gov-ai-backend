@@ -84,6 +84,27 @@ export class WhatsappService {
     return this.evolution.sendMessage(tenantId, phone, content, quotedId);
   }
 
+  async sendMedia(
+    tenantId: string,
+    phone: string,
+    file: { buffer: Buffer; mimetype: string; originalname: string },
+    caption?: string,
+  ) {
+    if (!(await this.evolution.isConnected(tenantId))) {
+      throw new BadRequestException(
+        'WhatsApp não está conectado. Conecte primeiro.',
+      );
+    }
+    return this.evolution.sendMedia(
+      tenantId,
+      phone,
+      file.buffer,
+      file.mimetype,
+      file.originalname,
+      caption,
+    );
+  }
+
   async broadcast(tenantId: string, phones: string[], content: string) {
     if (!(await this.evolution.isConnected(tenantId))) {
       throw new BadRequestException('WhatsApp não está conectado.');

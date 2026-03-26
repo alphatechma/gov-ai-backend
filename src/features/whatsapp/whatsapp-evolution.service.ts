@@ -11,7 +11,9 @@ import {
   MessageDirection,
   MessageStatus,
 } from './entities/whatsapp-message.entity';
+import { StorageService } from '../../shared/storage/storage.service';
 import { EventEmitter } from 'events';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class WhatsappEvolutionService
@@ -40,6 +42,7 @@ export class WhatsappEvolutionService
     private connectionRepo: Repository<WhatsappConnection>,
     @InjectRepository(WhatsappMessage)
     private messageRepo: Repository<WhatsappMessage>,
+    private storageService: StorageService,
   ) {
     super();
     this.apiUrl = this.configService.get(
@@ -533,6 +536,8 @@ export class WhatsappEvolutionService
       const pushName = msg.pushName || undefined;
 
       const message = msg.message || {};
+      const msgType = this.getMessageType(message);
+
       const content =
         message.conversation ||
         message.extendedTextMessage?.text ||
@@ -550,6 +555,14 @@ export class WhatsappEvolutionService
           : '') ||
         '[midia]';
 
+      // Extract base64 media if present (webhook_base64: true)
+      let mediaUrl: string | undefined;
+      try {
+        mediaUrl = await this.extractAndUploadMedia(tenantId, message, msgType);
+      } catch (mediaErr) {
+        this.logger.warn(`Failed to extract media: ${mediaErr.message}`);
+      }
+
       const conn = await this.connectionRepo.findOne({ where: { tenantId } });
 
       try {
@@ -561,15 +574,16 @@ export class WhatsappEvolutionService
           remoteName: pushName,
           remotePhone,
           content,
-          type: this.getMessageType(message),
+          type: msgType,
           direction: MessageDirection.INBOUND,
           status: MessageStatus.DELIVERED,
           externalId: key.id || undefined,
+          mediaUrl,
         });
         const saved = await this.messageRepo.save(entity);
 
         this.logger.log(
-          `Incoming message from ${remotePhone}: "${content.substring(0, 50)}"`,
+          `Incoming message from ${remotePhone}: type=${msgType}${mediaUrl ? ' [media saved]' : ''}`,
         );
         this.emit('message', { tenantId, message: saved });
       } catch (err) {
@@ -684,7 +698,7 @@ export class WhatsappEvolutionService
         webhook: {
           url: webhookUrl,
           webhook_by_events: false,
-          webhook_base64: false,
+          webhook_base64: true,
           enabled: true,
           events: [
             'QRCODE_UPDATED',
@@ -812,6 +826,132 @@ export class WhatsappEvolutionService
     }
 
     return clean;
+  }
+
+  // ── Send media message ──
+
+  async sendMedia(
+    tenantId: string,
+    phone: string,
+    mediaBuffer: Buffer,
+    mimetype: string,
+    filename: string,
+    caption?: string,
+  ) {
+    const inst = this.instances.get(tenantId);
+    if (!inst || inst.status !== ConnectionStatus.CONNECTED) {
+      throw new Error('WhatsApp não conectado');
+    }
+
+    const normalizedPhone = this.normalizePhone(phone);
+
+    // Upload to MinIO
+    const key = `whatsapp/${tenantId}/${randomUUID()}-${filename}`;
+    const mediaUrl = await this.storageService.upload(
+      'whatsapp-media',
+      key,
+      mediaBuffer,
+      mimetype,
+    );
+
+    // Determine media type for Evolution API
+    const isImage = mimetype.startsWith('image/');
+    const isVideo = mimetype.startsWith('video/');
+    const isAudio = mimetype.startsWith('audio/');
+    let mediatype = 'document';
+    if (isImage) mediatype = 'image';
+    else if (isVideo) mediatype = 'video';
+    else if (isAudio) mediatype = 'audio';
+
+    const base64 = mediaBuffer.toString('base64');
+
+    const body: any = {
+      number: normalizedPhone,
+      mediatype,
+      media: `data:${mimetype};base64,${base64}`,
+      fileName: filename,
+    };
+    if (caption) body.caption = caption;
+
+    const response = await this.apiCall(
+      'POST',
+      `/message/sendMedia/${inst.instanceName}`,
+      body,
+      inst.instanceToken,
+    );
+
+    // Look up existing remoteName
+    const existingMsg = await this.messageRepo.findOne({
+      where: { tenantId, remotePhone: normalizedPhone },
+      select: ['remoteName'],
+      order: { createdAt: 'DESC' },
+    });
+
+    const conn = await this.connectionRepo.findOne({ where: { tenantId } });
+
+    const entity = this.messageRepo.create({
+      tenantId,
+      connectionId: conn?.id || '',
+      remoteJid: `${normalizedPhone}@s.whatsapp.net`,
+      remotePhone: normalizedPhone,
+      remoteName: existingMsg?.remoteName || undefined,
+      content: caption || `[${mediatype === 'image' ? 'imagem' : mediatype}]`,
+      type: mediatype,
+      direction: MessageDirection.OUTBOUND,
+      status: MessageStatus.SENT,
+      externalId: response?.key?.id || undefined,
+      mediaUrl,
+    });
+
+    return this.messageRepo.save(entity);
+  }
+
+  // ── Extract and upload media from incoming webhook ──
+
+  private async extractAndUploadMedia(
+    tenantId: string,
+    message: any,
+    msgType: string,
+  ): Promise<string | undefined> {
+    const mediaTypes = ['image', 'video', 'audio', 'sticker', 'document'];
+    if (!mediaTypes.includes(msgType)) return undefined;
+
+    // Evolution API with webhook_base64: true sends base64 in the media message
+    const mediaMsg =
+      message.imageMessage ||
+      message.videoMessage ||
+      message.audioMessage ||
+      message.pttMessage ||
+      message.stickerMessage ||
+      message.documentMessage;
+
+    if (!mediaMsg) return undefined;
+
+    // base64 comes in mediaMsg.base64 when webhook_base64 is enabled
+    const base64 = mediaMsg.base64;
+    if (!base64) return undefined;
+
+    const mimetype = mediaMsg.mimetype || 'application/octet-stream';
+    const ext = this.getExtensionFromMimetype(mimetype);
+    const key = `whatsapp/${tenantId}/${randomUUID()}${ext}`;
+
+    const buffer = Buffer.from(base64, 'base64');
+    return this.storageService.upload('whatsapp-media', key, buffer, mimetype);
+  }
+
+  private getExtensionFromMimetype(mimetype: string): string {
+    const map: Record<string, string> = {
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+      'image/gif': '.gif',
+      'video/mp4': '.mp4',
+      'audio/ogg': '.ogg',
+      'audio/mpeg': '.mp3',
+      'audio/mp4': '.m4a',
+      'application/pdf': '.pdf',
+    };
+    return map[mimetype] || '';
   }
 
   private getMessageType(msg: any): string {
