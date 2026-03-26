@@ -49,6 +49,12 @@ export class WhatsappGateway
     this.evolution.on('message', ({ tenantId, message }) => {
       this.server?.to(`tenant:${tenantId}`).emit('whatsapp:message', message);
     });
+
+    this.evolution.on('message:status', ({ tenantId, externalId, status }) => {
+      this.server
+        ?.to(`tenant:${tenantId}`)
+        .emit('whatsapp:message:status', { externalId, status });
+    });
   }
 
   async handleConnection(client: AuthenticatedSocket) {

@@ -616,29 +616,57 @@ export class WhatsappEvolutionService
       DELIVERY_ACK: MessageStatus.DELIVERED,
       READ: MessageStatus.READ,
       PLAYED: MessageStatus.READ,
+      SENT: MessageStatus.SENT,
+    };
+
+    const numericMap: Record<number, MessageStatus> = {
+      0: MessageStatus.PENDING,
+      1: MessageStatus.SENT,
+      2: MessageStatus.DELIVERED,
+      3: MessageStatus.DELIVERED,
+      4: MessageStatus.READ,
+      5: MessageStatus.READ,
     };
 
     for (const update of updates) {
-      const keyId = update.key?.id;
-      const newStatus = update.status;
-      if (!keyId || !newStatus) continue;
+      this.logger.log(
+        `[MESSAGES_UPDATE] raw update keys=${Object.keys(update).join(',')} data=${JSON.stringify(update).substring(0, 300)}`,
+      );
 
-      // Evolution also uses numeric codes like Baileys
-      const numericMap: Record<number, MessageStatus> = {
-        2: MessageStatus.SENT,
-        3: MessageStatus.DELIVERED,
-        4: MessageStatus.READ,
-      };
+      const keyId = update.key?.id;
+      if (!keyId) continue;
+
+      // Evolution API v2 sends status in various locations
+      const rawStatus =
+        update.update?.status ??
+        update.status ??
+        update.update?.messageStatus ??
+        undefined;
+
+      if (rawStatus === undefined && rawStatus === null) continue;
 
       const mapped =
-        statusMap[newStatus] ||
-        (typeof newStatus === 'number' ? numericMap[newStatus] : undefined);
+        (typeof rawStatus === 'string' ? statusMap[rawStatus] : undefined) ||
+        (typeof rawStatus === 'number' ? numericMap[rawStatus] : undefined);
+
+      this.logger.log(
+        `[MESSAGES_UPDATE] keyId=${keyId} rawStatus=${rawStatus} (${typeof rawStatus}) mapped=${mapped}`,
+      );
 
       if (mapped) {
-        await this.messageRepo.update(
+        const result = await this.messageRepo.update(
           { externalId: keyId, tenantId },
           { status: mapped },
         );
+
+        // Emit event so frontend can update the status in real-time
+        if (result.affected && result.affected > 0) {
+          this.emit('message:status', {
+            tenantId,
+            externalId: keyId,
+            status: mapped,
+          });
+        }
       }
     }
   }
