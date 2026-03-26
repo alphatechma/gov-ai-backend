@@ -613,6 +613,7 @@ export class WhatsappEvolutionService
     const updates = Array.isArray(data) ? data : [data];
 
     const statusMap: Record<string, MessageStatus> = {
+      SERVER_ACK: MessageStatus.SENT,
       DELIVERY_ACK: MessageStatus.DELIVERED,
       READ: MessageStatus.READ,
       PLAYED: MessageStatus.READ,
@@ -629,28 +630,24 @@ export class WhatsappEvolutionService
     };
 
     for (const update of updates) {
-      this.logger.log(
-        `[MESSAGES_UPDATE] raw update keys=${Object.keys(update).join(',')} data=${JSON.stringify(update).substring(0, 300)}`,
-      );
-
-      const keyId = update.key?.id;
+      // Evolution API v2 sends keyId at root level, not nested in key.id
+      const keyId = update.keyId || update.key?.id;
       if (!keyId) continue;
 
-      // Evolution API v2 sends status in various locations
       const rawStatus =
-        update.update?.status ??
         update.status ??
+        update.update?.status ??
         update.update?.messageStatus ??
         undefined;
 
-      if (rawStatus === undefined && rawStatus === null) continue;
+      if (rawStatus === undefined || rawStatus === null) continue;
 
       const mapped =
         (typeof rawStatus === 'string' ? statusMap[rawStatus] : undefined) ||
         (typeof rawStatus === 'number' ? numericMap[rawStatus] : undefined);
 
       this.logger.log(
-        `[MESSAGES_UPDATE] keyId=${keyId} rawStatus=${rawStatus} (${typeof rawStatus}) mapped=${mapped}`,
+        `[MESSAGES_UPDATE] keyId=${keyId} rawStatus=${rawStatus} mapped=${mapped || 'UNMAPPED'}`,
       );
 
       if (mapped) {
@@ -659,7 +656,6 @@ export class WhatsappEvolutionService
           { status: mapped },
         );
 
-        // Emit event so frontend can update the status in real-time
         if (result.affected && result.affected > 0) {
           this.emit('message:status', {
             tenantId,
