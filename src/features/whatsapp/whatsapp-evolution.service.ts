@@ -256,6 +256,10 @@ export class WhatsappEvolutionService
       inst.instanceToken,
     );
 
+    this.logger.log(
+      `[SEND_TEXT] response keys=${response ? Object.keys(response).join(',') : 'null'} key.id=${response?.key?.id} full=${JSON.stringify(response).substring(0, 300)}`,
+    );
+
     // Look up existing remoteName for this contact
     const existingMsg = await this.messageRepo.findOne({
       where: { tenantId, remotePhone: normalizedPhone },
