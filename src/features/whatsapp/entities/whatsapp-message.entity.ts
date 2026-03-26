@@ -67,6 +67,9 @@ export class WhatsappMessage {
   @Column({ nullable: true })
   mediaUrl: string;
 
+  @Column({ type: 'jsonb', default: [] })
+  reactions: { emoji: string; from: string }[];
+
   @Column({ nullable: true })
   voterId: string;
 

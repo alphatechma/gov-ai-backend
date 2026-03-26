@@ -547,6 +547,15 @@ export class WhatsappEvolutionService
       const message = msg.message || {};
       const msgType = this.getMessageType(message);
 
+      // Handle reactions: update the original message instead of creating a new one
+      if (msgType === 'reaction') {
+        await this.handleReaction(tenantId, message.reactionMessage, remotePhone);
+        continue;
+      }
+
+      // Skip protocol messages (message edits, deletes, read receipts, etc.)
+      if (msgType === 'protocol' || msgType === 'edited') continue;
+
       const content =
         message.conversation ||
         message.extendedTextMessage?.text ||
@@ -965,6 +974,58 @@ export class WhatsappEvolutionService
     }
   }
 
+  // ── Handle reactions ──
+
+  private async handleReaction(
+    tenantId: string,
+    reactionMsg: any,
+    senderPhone: string,
+  ) {
+    if (!reactionMsg?.key?.id) return;
+
+    const originalExternalId = reactionMsg.key.id;
+    const emoji = reactionMsg.text || '';
+
+    const original = await this.messageRepo.findOne({
+      where: { tenantId, externalId: originalExternalId },
+    });
+
+    if (!original) {
+      this.logger.warn(
+        `Reaction target not found: externalId=${originalExternalId}`,
+      );
+      return;
+    }
+
+    const reactions = original.reactions || [];
+
+    if (emoji) {
+      // Add or update reaction from this sender
+      const idx = reactions.findIndex((r) => r.from === senderPhone);
+      if (idx >= 0) {
+        reactions[idx].emoji = emoji;
+      } else {
+        reactions.push({ emoji, from: senderPhone });
+      }
+    } else {
+      // Empty text = remove reaction from this sender
+      const idx = reactions.findIndex((r) => r.from === senderPhone);
+      if (idx >= 0) reactions.splice(idx, 1);
+    }
+
+    await this.messageRepo.update(original.id, { reactions });
+
+    this.logger.log(
+      `Reaction ${emoji || '(removed)'} on message ${original.id} from ${senderPhone}`,
+    );
+
+    // Emit event so frontend can update in real-time
+    this.emit('message', {
+      tenantId,
+      message: { ...original, reactions },
+    });
+  }
+
   // ── Extract and save media from incoming webhook ──
 
   private extractMediaBase64(message: any, msgType: string): { base64: string; mimetype: string } | null {
@@ -997,6 +1058,9 @@ export class WhatsappEvolutionService
     if (msg.stickerMessage) return 'sticker';
     if (msg.locationMessage) return 'location';
     if (msg.contactMessage || msg.contactsArrayMessage) return 'contact';
+    if (msg.reactionMessage) return 'reaction';
+    if (msg.protocolMessage) return 'protocol';
+    if (msg.editedMessage) return 'edited';
     return 'unknown';
   }
 
