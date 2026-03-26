@@ -11,9 +11,7 @@ import {
   MessageDirection,
   MessageStatus,
 } from './entities/whatsapp-message.entity';
-import { StorageService } from '../../shared/storage/storage.service';
 import { EventEmitter } from 'events';
-import { randomUUID } from 'crypto';
 
 @Injectable()
 export class WhatsappEvolutionService
@@ -42,7 +40,6 @@ export class WhatsappEvolutionService
     private connectionRepo: Repository<WhatsappConnection>,
     @InjectRepository(WhatsappMessage)
     private messageRepo: Repository<WhatsappMessage>,
-    private storageService: StorageService,
   ) {
     super();
     this.apiUrl = this.configService.get(
@@ -555,13 +552,10 @@ export class WhatsappEvolutionService
           : '') ||
         '[midia]';
 
-      // Extract base64 media if present (webhook_base64: true)
-      let mediaUrl: string | undefined;
-      try {
-        mediaUrl = await this.extractAndUploadMedia(tenantId, message, msgType);
-      } catch (mediaErr) {
-        this.logger.warn(`Failed to extract media: ${mediaErr.message}`);
-      }
+      // Mark that this message has media (will be fetched via proxy endpoint)
+      const hasMedia = this.extractMediaBase64(message, msgType) !== null
+        || ['image', 'video', 'audio', 'sticker', 'document'].includes(msgType);
+      const mediaUrl = hasMedia ? 'proxy' : undefined;
 
       const conn = await this.connectionRepo.findOne({ where: { tenantId } });
 
@@ -845,15 +839,6 @@ export class WhatsappEvolutionService
 
     const normalizedPhone = this.normalizePhone(phone);
 
-    // Upload to MinIO
-    const key = `whatsapp/${tenantId}/${randomUUID()}-${filename}`;
-    const mediaUrl = await this.storageService.upload(
-      'whatsapp-media',
-      key,
-      mediaBuffer,
-      mimetype,
-    );
-
     // Determine media type for Evolution API
     const isImage = mimetype.startsWith('image/');
     const isVideo = mimetype.startsWith('video/');
@@ -900,23 +885,55 @@ export class WhatsappEvolutionService
       direction: MessageDirection.OUTBOUND,
       status: MessageStatus.SENT,
       externalId: response?.key?.id || undefined,
-      mediaUrl,
+      mediaUrl: 'proxy',
     });
 
     return this.messageRepo.save(entity);
   }
 
-  // ── Extract and upload media from incoming webhook ──
+  // ── Fetch media from Evolution API (proxy) ──
 
-  private async extractAndUploadMedia(
+  async getMediaBase64(
     tenantId: string,
-    message: any,
-    msgType: string,
-  ): Promise<string | undefined> {
-    const mediaTypes = ['image', 'video', 'audio', 'sticker', 'document'];
-    if (!mediaTypes.includes(msgType)) return undefined;
+    messageExternalId: string,
+    remoteJid: string,
+  ): Promise<{ base64: string; mimetype: string } | null> {
+    const inst = this.instances.get(tenantId);
+    if (!inst) return null;
 
-    // Evolution API with webhook_base64: true sends base64 in the media message
+    try {
+      const result = await this.apiCall(
+        'POST',
+        `/chat/getBase64FromMediaMessage/${inst.instanceName}`,
+        {
+          message: {
+            key: {
+              remoteJid,
+              id: messageExternalId,
+            },
+          },
+        },
+        inst.instanceToken,
+      );
+
+      if (result?.base64 && result?.mimetype) {
+        return { base64: result.base64, mimetype: result.mimetype };
+      }
+      return null;
+    } catch (err) {
+      this.logger.warn(
+        `Failed to fetch media from Evolution API: ${err.message}`,
+      );
+      return null;
+    }
+  }
+
+  // ── Extract and save media from incoming webhook ──
+
+  private extractMediaBase64(message: any, msgType: string): { base64: string; mimetype: string } | null {
+    const mediaTypes = ['image', 'video', 'audio', 'sticker', 'document'];
+    if (!mediaTypes.includes(msgType)) return null;
+
     const mediaMsg =
       message.imageMessage ||
       message.videoMessage ||
@@ -925,33 +942,13 @@ export class WhatsappEvolutionService
       message.stickerMessage ||
       message.documentMessage;
 
-    if (!mediaMsg) return undefined;
+    if (!mediaMsg) return null;
 
-    // base64 comes in mediaMsg.base64 when webhook_base64 is enabled
+    // webhook_base64: true sends base64 in the media message
     const base64 = mediaMsg.base64;
-    if (!base64) return undefined;
+    if (!base64) return null;
 
-    const mimetype = mediaMsg.mimetype || 'application/octet-stream';
-    const ext = this.getExtensionFromMimetype(mimetype);
-    const key = `whatsapp/${tenantId}/${randomUUID()}${ext}`;
-
-    const buffer = Buffer.from(base64, 'base64');
-    return this.storageService.upload('whatsapp-media', key, buffer, mimetype);
-  }
-
-  private getExtensionFromMimetype(mimetype: string): string {
-    const map: Record<string, string> = {
-      'image/jpeg': '.jpg',
-      'image/png': '.png',
-      'image/webp': '.webp',
-      'image/gif': '.gif',
-      'video/mp4': '.mp4',
-      'audio/ogg': '.ogg',
-      'audio/mpeg': '.mp3',
-      'audio/mp4': '.m4a',
-      'application/pdf': '.pdf',
-    };
-    return map[mimetype] || '';
+    return { base64, mimetype: mediaMsg.mimetype || 'application/octet-stream' };
   }
 
   private getMessageType(msg: any): string {

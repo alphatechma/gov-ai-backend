@@ -117,6 +117,24 @@ export class WhatsappService {
     return this.evolution.broadcast(tenantId, phones, content);
   }
 
+  // ── Media Proxy ──
+
+  async getMediaForMessage(
+    tenantId: string,
+    messageId: string,
+  ): Promise<{ base64: string; mimetype: string } | null> {
+    const msg = await this.messageRepo.findOne({
+      where: { id: messageId, tenantId },
+    });
+    if (!msg || !msg.externalId) return null;
+
+    return this.evolution.getMediaBase64(
+      tenantId,
+      msg.externalId,
+      msg.remoteJid,
+    );
+  }
+
   // ── Webhook ──
 
   async handleWebhook(tenantId: string, body: any) {

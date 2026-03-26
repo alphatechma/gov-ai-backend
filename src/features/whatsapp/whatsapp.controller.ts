@@ -7,13 +7,16 @@ import {
   Param,
   Query,
   Req,
+  Res,
   UseGuards,
   UseInterceptors,
   UploadedFile,
   HttpCode,
   HttpStatus,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt-auth.guard';
 import { ModuleAccessGuard } from '../../shared/guards/module-access.guard';
@@ -101,6 +104,31 @@ export class WhatsappController {
       dto.phones,
       dto.content,
     );
+  }
+
+  // ── Media Proxy ──
+
+  @Get('media/:messageId')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  async getMedia(
+    @Req() req: any,
+    @Param('messageId') messageId: string,
+    @Res() res: Response,
+  ) {
+    const result = await this.whatsappService.getMediaForMessage(
+      req.tenantId,
+      messageId,
+    );
+    if (!result) throw new NotFoundException('Mídia não encontrada');
+
+    const buffer = Buffer.from(result.base64, 'base64');
+    res.set({
+      'Content-Type': result.mimetype,
+      'Content-Length': buffer.length,
+      'Cache-Control': 'public, max-age=86400',
+    });
+    res.send(buffer);
   }
 
   // ── Chat History ──

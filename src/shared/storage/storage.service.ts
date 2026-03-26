@@ -48,7 +48,6 @@ export class StorageService implements OnModuleInit {
     await this.ensureBucket('branding', true);
     await this.ensureBucket('avatars', true);
     await this.ensureBucket('documents', false);
-    await this.ensureBucket('whatsapp-media', true);
   }
 
   async upload(
