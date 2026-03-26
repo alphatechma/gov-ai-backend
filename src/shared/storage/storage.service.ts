@@ -44,6 +44,20 @@ export class StorageService implements OnModuleInit {
   async onModuleInit() {
     if (!this.s3) return;
 
+    // Quick connectivity check before trying to create buckets
+    try {
+      await this.s3.send(new HeadBucketCommand({ Bucket: '__ping__' }));
+    } catch (err: any) {
+      // "NotFound" or "NoSuchBucket" means MinIO is reachable (bucket just doesn't exist)
+      // Any network error (EAI_AGAIN, ECONNREFUSED, etc.) means MinIO is unreachable
+      if (err?.code === 'EAI_AGAIN' || err?.code === 'ECONNREFUSED' || err?.code === 'ENOTFOUND') {
+        this.logger.warn(
+          `MinIO unreachable (${err.code}) — skipping bucket setup. Storage operations will fail until MinIO is available.`,
+        );
+        return;
+      }
+    }
+
     // Create default buckets
     await this.ensureBucket('branding', true);
     await this.ensureBucket('avatars', true);
