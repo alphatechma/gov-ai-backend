@@ -524,12 +524,21 @@ export class WhatsappEvolutionService
         continue;
       }
 
-      // Skip outbound messages (we already saved them when sending)
-      if (key.fromMe) continue;
+      const isFromMe = !!key.fromMe;
 
       const remoteJid = key.remoteJid || '';
       // Skip group messages
       if (remoteJid.includes('@g.us')) continue;
+
+      // Skip if we already have this message (sent via the system)
+      const externalId = key.id || undefined;
+      if (isFromMe && externalId) {
+        const exists = await this.messageRepo.findOne({
+          where: { tenantId, externalId },
+          select: ['id'],
+        });
+        if (exists) continue;
+      }
 
       const rawPhone = remoteJid.split('@')[0];
       const remotePhone = this.normalizePhone(rawPhone);
@@ -560,6 +569,8 @@ export class WhatsappEvolutionService
         || ['image', 'video', 'audio', 'sticker', 'document'].includes(msgType);
       const mediaUrl = hasMedia ? 'proxy' : undefined;
 
+      const direction = isFromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND;
+
       const conn = await this.connectionRepo.findOne({ where: { tenantId } });
 
       try {
@@ -568,19 +579,19 @@ export class WhatsappEvolutionService
           tenantId,
           connectionId: conn?.id || '',
           remoteJid: normalizedJid,
-          remoteName: pushName,
+          remoteName: isFromMe ? undefined : pushName,
           remotePhone,
           content,
           type: msgType,
-          direction: MessageDirection.INBOUND,
-          status: MessageStatus.DELIVERED,
-          externalId: key.id || undefined,
+          direction,
+          status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
+          externalId,
           mediaUrl,
         });
         const saved = await this.messageRepo.save(entity);
 
         this.logger.log(
-          `Incoming message from ${remotePhone}: type=${msgType}${mediaUrl ? ' [media saved]' : ''}`,
+          `${isFromMe ? 'Outbound (phone)' : 'Incoming'} message ${remotePhone}: type=${msgType}${mediaUrl ? ' [media]' : ''}`,
         );
         this.emit('message', { tenantId, message: saved });
       } catch (err) {
