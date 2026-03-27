@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -140,12 +141,39 @@ export class WhatsappController {
     @Req() req: any,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('filter') filter?: string,
   ) {
+    const validFilters = ['all', 'unread', 'reply-later'] as const;
+    const f = validFilters.includes(filter as any)
+      ? (filter as (typeof validFilters)[number])
+      : 'all';
     return this.whatsappService.getChats(
       req.tenantId,
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 30,
+      f,
     );
+  }
+
+  @Patch('chats/:phone/read')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  markChatRead(@Req() req: any, @Param('phone') phone: string) {
+    return this.whatsappService.markChatRead(req.tenantId, phone);
+  }
+
+  @Patch('chats/:phone/unread')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  markChatUnread(@Req() req: any, @Param('phone') phone: string) {
+    return this.whatsappService.markChatUnread(req.tenantId, phone);
+  }
+
+  @Patch('chats/:phone/reply-later')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  toggleReplyLater(@Req() req: any, @Param('phone') phone: string) {
+    return this.whatsappService.toggleReplyLater(req.tenantId, phone);
   }
 
   @Get('chats/messages')

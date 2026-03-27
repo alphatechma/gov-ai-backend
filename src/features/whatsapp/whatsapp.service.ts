@@ -5,7 +5,10 @@ import {
   WhatsappConnection,
   ConnectionStatus,
 } from './entities/whatsapp-connection.entity';
-import { WhatsappMessage } from './entities/whatsapp-message.entity';
+import {
+  WhatsappMessage,
+  MessageDirection,
+} from './entities/whatsapp-message.entity';
 import { WhatsappEvolutionService } from './whatsapp-evolution.service';
 
 @Injectable()
@@ -160,9 +163,14 @@ export class WhatsappService {
 
   // ── Message History ──
 
-  async getChats(tenantId: string, page = 1, limit = 30) {
+  async getChats(
+    tenantId: string,
+    page = 1,
+    limit = 30,
+    filter: 'all' | 'unread' | 'reply-later' = 'all',
+  ) {
     // Group by remotePhone to merge conversations
-    const chats = await this.messageRepo
+    const qb = this.messageRepo
       .createQueryBuilder('m')
       .select('m."remotePhone"', 'remotePhone')
       .addSelect('MAX(m."remoteJid")', 'remoteJid')
@@ -170,15 +178,28 @@ export class WhatsappService {
       .addSelect('MAX(m."createdAt")', 'lastMessageAt')
       .addSelect('COUNT(*)::int', 'messageCount')
       .addSelect(
-        `SUM(CASE WHEN m.direction = 'INBOUND' AND m.status != 'READ' THEN 1 ELSE 0 END)::int`,
+        `SUM(CASE WHEN m.direction = 'INBOUND' AND m."readByUser" = false THEN 1 ELSE 0 END)::int`,
         'unreadCount',
+      )
+      .addSelect(
+        `BOOL_OR(m."replyLater")`,
+        'replyLater',
       )
       .where('m."tenantId" = :tenantId', { tenantId })
       .groupBy('m."remotePhone"')
       .orderBy('"lastMessageAt"', 'DESC')
       .offset((page - 1) * limit)
-      .limit(limit)
-      .getRawMany();
+      .limit(limit);
+
+    if (filter === 'unread') {
+      qb.having(
+        `SUM(CASE WHEN m.direction = 'INBOUND' AND m."readByUser" = false THEN 1 ELSE 0 END) > 0`,
+      );
+    } else if (filter === 'reply-later') {
+      qb.having(`BOOL_OR(m."replyLater") = true`);
+    }
+
+    const chats = await qb.getRawMany();
 
     // Fetch last message content for each chat
     for (const chat of chats) {
@@ -191,9 +212,47 @@ export class WhatsappService {
     }
 
     this.logger.log(
-      `getChats for tenant ${tenantId}: found ${chats.length} chats`,
+      `getChats for tenant ${tenantId}: found ${chats.length} chats (filter=${filter})`,
     );
     return chats;
+  }
+
+  async markChatRead(tenantId: string, phone: string) {
+    const clean = phone.replace(/\D/g, '');
+    await this.messageRepo.update(
+      { tenantId, remotePhone: clean, direction: MessageDirection.INBOUND, readByUser: false },
+      { readByUser: true },
+    );
+  }
+
+  async markChatUnread(tenantId: string, phone: string) {
+    const clean = phone.replace(/\D/g, '');
+    // Mark the last INBOUND message as unread
+    const lastInbound = await this.messageRepo.findOne({
+      where: { tenantId, remotePhone: clean, direction: MessageDirection.INBOUND },
+      order: { createdAt: 'DESC' },
+    });
+    if (lastInbound) {
+      await this.messageRepo.update(lastInbound.id, { readByUser: false });
+    }
+  }
+
+  async toggleReplyLater(tenantId: string, phone: string) {
+    const clean = phone.replace(/\D/g, '');
+    // Check current state from the latest message
+    const latest = await this.messageRepo.findOne({
+      where: { tenantId, remotePhone: clean },
+      order: { createdAt: 'DESC' },
+    });
+    if (!latest) return { replyLater: false };
+
+    const newValue = !latest.replyLater;
+    // Set replyLater on all messages for this chat (so BOOL_OR aggregation works)
+    await this.messageRepo.update(
+      { tenantId, remotePhone: clean },
+      { replyLater: newValue },
+    );
+    return { replyLater: newValue };
   }
 
   async getChatMessages(

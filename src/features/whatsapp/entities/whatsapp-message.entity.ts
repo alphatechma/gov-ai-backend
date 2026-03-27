@@ -73,6 +73,12 @@ export class WhatsappMessage {
   @Column({ nullable: true })
   voterId: string;
 
+  @Column({ default: true })
+  readByUser: boolean;
+
+  @Column({ default: false })
+  replyLater: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 }

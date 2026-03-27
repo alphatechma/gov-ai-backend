@@ -600,6 +600,7 @@ export class WhatsappEvolutionService
           status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
           externalId,
           mediaUrl,
+          readByUser: isFromMe ? true : false,
         });
         const saved = await this.messageRepo.save(entity);
 

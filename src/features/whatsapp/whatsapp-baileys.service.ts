@@ -337,6 +337,7 @@ export class WhatsappBaileysService
               direction: MessageDirection.INBOUND,
               status: MessageStatus.DELIVERED,
               externalId: msg.key.id || undefined,
+              readByUser: false,
             });
             const saved = await this.messageRepo.save(entity);
 
