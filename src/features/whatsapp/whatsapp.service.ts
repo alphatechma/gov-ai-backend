@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike } from 'typeorm';
+import { Repository, ILike, MoreThanOrEqual } from 'typeorm';
 import {
   WhatsappConnection,
   ConnectionStatus,
@@ -288,5 +288,110 @@ export class WhatsappService {
       order: { createdAt: 'DESC' },
       take: limit,
     });
+  }
+
+  async getAnalytics(tenantId: string, days = 30) {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    since.setHours(0, 0, 0, 0);
+
+    const qb = this.messageRepo.createQueryBuilder('m')
+      .where('m."tenantId" = :tenantId', { tenantId })
+      .andWhere('m."createdAt" >= :since', { since });
+
+    // KPIs
+    const kpis = await qb.clone()
+      .select(`COUNT(*)::int`, 'total')
+      .addSelect(`SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`, 'inbound')
+      .addSelect(`SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`, 'outbound')
+      .addSelect(`COUNT(DISTINCT m."remotePhone")::int`, 'activeContacts')
+      .addSelect(
+        `SUM(CASE WHEN m.direction = 'INBOUND' AND m."readByUser" = false THEN 1 ELSE 0 END)::int`,
+        'unread',
+      )
+      .getRawOne();
+
+    // Reply-later count (distinct contacts)
+    const replyLaterResult = await this.messageRepo.createQueryBuilder('m')
+      .select('COUNT(DISTINCT m."remotePhone")::int', 'count')
+      .where('m."tenantId" = :tenantId', { tenantId })
+      .andWhere('m."replyLater" = true')
+      .getRawOne();
+
+    // Volume by day
+    const volumeByDay = await qb.clone()
+      .select(`DATE(m."createdAt")`, 'date')
+      .addSelect(`SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`, 'inbound')
+      .addSelect(`SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`, 'outbound')
+      .groupBy(`DATE(m."createdAt")`)
+      .orderBy(`DATE(m."createdAt")`, 'ASC')
+      .getRawMany();
+
+    // Peak hours
+    const peakHours = await qb.clone()
+      .select(`EXTRACT(HOUR FROM m."createdAt")::int`, 'hour')
+      .addSelect(`COUNT(*)::int`, 'count')
+      .groupBy(`EXTRACT(HOUR FROM m."createdAt")`)
+      .orderBy('hour', 'ASC')
+      .getRawMany();
+
+    // Message types
+    const messageTypes = await qb.clone()
+      .select('m.type', 'type')
+      .addSelect('COUNT(*)::int', 'count')
+      .groupBy('m.type')
+      .orderBy('count', 'DESC')
+      .getRawMany();
+
+    // Top 10 contacts
+    const topContacts = await qb.clone()
+      .select('m."remotePhone"', 'phone')
+      .addSelect('MAX(m."remoteName")', 'name')
+      .addSelect('COUNT(*)::int', 'total')
+      .addSelect(`SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`, 'inbound')
+      .addSelect(`SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`, 'outbound')
+      .groupBy('m."remotePhone"')
+      .orderBy('total', 'DESC')
+      .limit(10)
+      .getRawMany();
+
+    // Response rate: % of contacts who received at least 1 OUTBOUND among those with INBOUND
+    const responseRate = await qb.clone()
+      .select(`COUNT(DISTINCT CASE WHEN m.direction = 'INBOUND' THEN m."remotePhone" END)::int`, 'withInbound')
+      .addSelect(
+        `COUNT(DISTINCT CASE WHEN m.direction = 'OUTBOUND' AND m."remotePhone" IN (
+          SELECT DISTINCT m2."remotePhone" FROM whatsapp_messages m2
+          WHERE m2."tenantId" = m."tenantId" AND m2.direction = 'INBOUND' AND m2."createdAt" >= :since
+        ) THEN m."remotePhone" END)::int`,
+        'withResponse',
+      )
+      .getRawOne();
+
+    // Last 10 messages
+    const recentMessages = await this.messageRepo.find({
+      where: { tenantId },
+      order: { createdAt: 'DESC' },
+      take: 10,
+      select: ['id', 'remotePhone', 'remoteName', 'content', 'type', 'direction', 'status', 'createdAt'],
+    });
+
+    return {
+      kpis: {
+        total: kpis?.total || 0,
+        inbound: kpis?.inbound || 0,
+        outbound: kpis?.outbound || 0,
+        activeContacts: kpis?.activeContacts || 0,
+        unread: kpis?.unread || 0,
+        replyLater: replyLaterResult?.count || 0,
+        responseRate: kpis?.total > 0 && responseRate?.withInbound > 0
+          ? Math.round((responseRate.withResponse / responseRate.withInbound) * 100)
+          : 0,
+      },
+      volumeByDay,
+      peakHours,
+      messageTypes,
+      topContacts,
+      recentMessages,
+    };
   }
 }

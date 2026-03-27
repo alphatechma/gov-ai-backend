@@ -132,6 +132,18 @@ export class WhatsappController {
     res.send(buffer);
   }
 
+  // ── Analytics ──
+
+  @Get('analytics')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  getAnalytics(@Req() req: any, @Query('days') days?: string) {
+    return this.whatsappService.getAnalytics(
+      req.tenantId,
+      days ? parseInt(days, 10) : 30,
+    );
+  }
+
   // ── Chat History ──
 
   @Get('chats')
