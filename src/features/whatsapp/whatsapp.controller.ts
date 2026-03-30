@@ -162,9 +162,16 @@ export class WhatsappController {
     return this.whatsappService.getChats(
       req.tenantId,
       page ? parseInt(page, 10) : 1,
-      limit ? parseInt(limit, 10) : 30,
+      limit ? parseInt(limit, 10) : 20,
       f,
     );
+  }
+
+  @Delete('chats/:phone')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  deleteChat(@Req() req: any, @Param('phone') phone: string) {
+    return this.whatsappService.deleteChat(req.tenantId, phone);
   }
 
   @Patch('chats/:phone/read')

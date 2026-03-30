@@ -166,7 +166,7 @@ export class WhatsappService {
   async getChats(
     tenantId: string,
     page = 1,
-    limit = 30,
+    limit = 20,
     filter: 'all' | 'unread' | 'reply-later' = 'all',
   ) {
     // Group by remotePhone to merge conversations
@@ -189,7 +189,7 @@ export class WhatsappService {
       .groupBy('m."remotePhone"')
       .orderBy('"lastMessageAt"', 'DESC')
       .offset((page - 1) * limit)
-      .limit(limit);
+      .limit(limit + 1);
 
     if (filter === 'unread') {
       qb.having(
@@ -200,6 +200,8 @@ export class WhatsappService {
     }
 
     const chats = await qb.getRawMany();
+    const hasMore = chats.length > limit;
+    if (hasMore) chats.pop();
 
     // Fetch last message content for each chat
     for (const chat of chats) {
@@ -212,9 +214,9 @@ export class WhatsappService {
     }
 
     this.logger.log(
-      `getChats for tenant ${tenantId}: found ${chats.length} chats (filter=${filter})`,
+      `getChats for tenant ${tenantId}: page=${page} found ${chats.length} chats (filter=${filter}, hasMore=${hasMore})`,
     );
-    return chats;
+    return { chats, hasMore, page };
   }
 
   async markChatRead(tenantId: string, phone: string) {
@@ -253,6 +255,15 @@ export class WhatsappService {
       { replyLater: newValue },
     );
     return { replyLater: newValue };
+  }
+
+  async deleteChat(tenantId: string, phone: string) {
+    const clean = phone.replace(/\D/g, '');
+    const result = await this.messageRepo.delete({
+      tenantId,
+      remotePhone: clean,
+    });
+    return { deleted: result.affected || 0 };
   }
 
   async getChatMessages(
