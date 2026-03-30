@@ -137,11 +137,43 @@ export class WhatsappController {
   @Get('analytics')
   @UseGuards(JwtAuthGuard, ModuleAccessGuard)
   @RequiresModule('whatsapp')
-  getAnalytics(@Req() req: any, @Query('days') days?: string) {
+  getAnalytics(
+    @Req() req: any,
+    @Query('days') days?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
     return this.whatsappService.getAnalytics(
       req.tenantId,
       days ? parseInt(days, 10) : 30,
+      startDate,
+      endDate,
     );
+  }
+
+  @Get('analytics/export')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  async exportAnalytics(
+    @Req() req: any,
+    @Res() res: Response,
+    @Query('days') days?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const buffer = await this.whatsappService.exportAnalyticsToExcel(
+      req.tenantId,
+      days ? parseInt(days, 10) : 30,
+      startDate,
+      endDate,
+    );
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="whatsapp_analytics.xlsx"',
+      'Content-Length': buffer.length,
+    });
+    res.send(buffer);
   }
 
   // ── Chat History ──

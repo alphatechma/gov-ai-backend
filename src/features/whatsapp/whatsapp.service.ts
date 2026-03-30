@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, MoreThanOrEqual } from 'typeorm';
+import * as ExcelJS from 'exceljs';
 import {
   WhatsappConnection,
   ConnectionStatus,
@@ -301,14 +302,36 @@ export class WhatsappService {
     });
   }
 
-  async getAnalytics(tenantId: string, days = 30) {
-    const since = new Date();
-    since.setDate(since.getDate() - days);
-    since.setHours(0, 0, 0, 0);
+  private buildDateRange(days: number, startDate?: string, endDate?: string) {
+    let since: Date;
+    let until: Date | undefined;
+
+    if (startDate) {
+      since = new Date(startDate);
+      since.setHours(0, 0, 0, 0);
+      if (endDate) {
+        until = new Date(endDate);
+        until.setHours(23, 59, 59, 999);
+      }
+    } else {
+      since = new Date();
+      since.setDate(since.getDate() - days);
+      since.setHours(0, 0, 0, 0);
+    }
+
+    return { since, until };
+  }
+
+  async getAnalytics(tenantId: string, days = 30, startDate?: string, endDate?: string) {
+    const { since, until } = this.buildDateRange(days, startDate, endDate);
 
     const qb = this.messageRepo.createQueryBuilder('m')
       .where('m."tenantId" = :tenantId', { tenantId })
       .andWhere('m."createdAt" >= :since', { since });
+
+    if (until) {
+      qb.andWhere('m."createdAt" <= :until', { until });
+    }
 
     // KPIs
     const kpis = await qb.clone()
@@ -404,5 +427,118 @@ export class WhatsappService {
       topContacts,
       recentMessages,
     };
+  }
+
+  async exportAnalyticsToExcel(
+    tenantId: string,
+    days = 30,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<Buffer> {
+    const { since, until } = this.buildDateRange(days, startDate, endDate);
+
+    const qb = this.messageRepo.createQueryBuilder('m')
+      .where('m."tenantId" = :tenantId', { tenantId })
+      .andWhere('m."createdAt" >= :since', { since });
+
+    if (until) {
+      qb.andWhere('m."createdAt" <= :until', { until });
+    }
+
+    const messages = await qb.clone()
+      .select([
+        'm.remoteName',
+        'm.remotePhone',
+        'm.content',
+        'm.type',
+        'm.direction',
+        'm.status',
+        'm.createdAt',
+      ])
+      .orderBy('m."createdAt"', 'DESC')
+      .getMany();
+
+    const wb = new ExcelJS.Workbook();
+
+    // ── Sheet 1: Mensagens ──
+    const wsMsgs = wb.addWorksheet('Mensagens');
+    const msgHeaders = ['Contato', 'Telefone', 'Mensagem', 'Tipo', 'Direcao', 'Status', 'Data/Hora'];
+    const msgWidths = [25, 18, 50, 12, 12, 12, 20];
+    wsMsgs.columns = msgHeaders.map((header, i) => ({ header, width: msgWidths[i] }));
+
+    const directionLabel = { INBOUND: 'Recebida', OUTBOUND: 'Enviada' };
+    const typeLabels: Record<string, string> = {
+      text: 'Texto', image: 'Imagem', audio: 'Audio', video: 'Video',
+      document: 'Documento', sticker: 'Sticker', location: 'Localizacao', contact: 'Contato',
+    };
+
+    for (const msg of messages) {
+      wsMsgs.addRow([
+        msg.remoteName || '',
+        msg.remotePhone,
+        msg.content || `[${msg.type}]`,
+        typeLabels[msg.type] || msg.type,
+        directionLabel[msg.direction] || msg.direction,
+        msg.status,
+        msg.createdAt,
+      ]);
+    }
+
+    // ── Sheet 2: Resumo por contato ──
+    const contactStats = await qb.clone()
+      .select('m."remotePhone"', 'phone')
+      .addSelect('MAX(m."remoteName")', 'name')
+      .addSelect('COUNT(*)::int', 'total')
+      .addSelect(`SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`, 'inbound')
+      .addSelect(`SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`, 'outbound')
+      .groupBy('m."remotePhone"')
+      .orderBy('total', 'DESC')
+      .getRawMany();
+
+    const wsContacts = wb.addWorksheet('Contatos');
+    const contactHeaders = ['Contato', 'Telefone', 'Total', 'Recebidas', 'Enviadas'];
+    const contactWidths = [25, 18, 10, 12, 12];
+    wsContacts.columns = contactHeaders.map((header, i) => ({ header, width: contactWidths[i] }));
+
+    for (const c of contactStats) {
+      wsContacts.addRow([c.name || '', c.phone, c.total, c.inbound, c.outbound]);
+    }
+
+    // ── Sheet 3: Volume por dia ──
+    const volumeByDay = await qb.clone()
+      .select(`DATE(m."createdAt")`, 'date')
+      .addSelect(`SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`, 'inbound')
+      .addSelect(`SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`, 'outbound')
+      .groupBy(`DATE(m."createdAt")`)
+      .orderBy(`DATE(m."createdAt")`, 'ASC')
+      .getRawMany();
+
+    const wsVolume = wb.addWorksheet('Volume por Dia');
+    wsVolume.columns = [
+      { header: 'Data', width: 14 },
+      { header: 'Recebidas', width: 12 },
+      { header: 'Enviadas', width: 12 },
+    ];
+
+    for (const v of volumeByDay) {
+      wsVolume.addRow([v.date, v.inbound, v.outbound]);
+    }
+
+    // Style headers on all sheets
+    for (const ws of [wsMsgs, wsContacts, wsVolume]) {
+      const headerRow = ws.getRow(1);
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF4A4A4A' },
+        };
+        cell.alignment = { horizontal: 'center' };
+      });
+    }
+
+    const arrayBuffer = await wb.xlsx.writeBuffer();
+    return Buffer.from(arrayBuffer);
   }
 }
