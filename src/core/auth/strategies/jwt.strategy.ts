@@ -11,6 +11,7 @@ interface JwtPayload {
   email: string;
   role: string;
   tenantId: string | null;
+  iat?: number;
 }
 
 @Injectable()
@@ -35,6 +36,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (!user || !user.active) {
       throw new UnauthorizedException('Usuário inativo ou não encontrado');
+    }
+
+    if (
+      user.sessionsValidAfter &&
+      payload.iat &&
+      payload.iat * 1000 < user.sessionsValidAfter.getTime()
+    ) {
+      throw new UnauthorizedException('Sessão revogada, faça login novamente');
     }
 
     return {

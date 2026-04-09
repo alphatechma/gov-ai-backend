@@ -27,7 +27,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
     });
   }
 
-  async validate(payload: { sub: string }) {
+  async validate(payload: { sub: string; iat?: number }) {
     const user = await this.usersRepo.findOne({
       where: { id: payload.sub },
       relations: ['tenant'],
@@ -35,6 +35,14 @@ export class JwtRefreshStrategy extends PassportStrategy(
 
     if (!user || !user.active) {
       throw new UnauthorizedException('Usuário inativo ou não encontrado');
+    }
+
+    if (
+      user.sessionsValidAfter &&
+      payload.iat &&
+      payload.iat * 1000 < user.sessionsValidAfter.getTime()
+    ) {
+      throw new UnauthorizedException('Sessão revogada, faça login novamente');
     }
 
     return {

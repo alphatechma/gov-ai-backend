@@ -4,6 +4,7 @@ import {
   Post,
   Patch,
   Body,
+  Param,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -55,5 +56,32 @@ export class AuthController {
     @Body() dto: UpdateProfileDto,
   ) {
     return this.authService.updateProfile(userId, dto);
+  }
+
+  @Post('sessions/kick-all')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
+  kickAllSessions(@CurrentUser('id') currentUserId: string) {
+    return this.authService.kickAllSessions(currentUserId);
+  }
+
+  @Post('sessions/kick-tenant/:tenantId')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
+  kickTenantSessions(
+    @Param('tenantId') tenantId: string,
+    @CurrentUser('id') currentUserId: string,
+  ) {
+    return this.authService.kickTenantSessions(tenantId, currentUserId);
+  }
+
+  @Post('sessions/kick-user/:userId')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
+  kickUserSession(@Param('userId') userId: string) {
+    return this.authService.kickUserSession(userId);
   }
 }

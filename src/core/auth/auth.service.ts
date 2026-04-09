@@ -195,6 +195,47 @@ export class AuthService {
     return this.getProfile(userId);
   }
 
+  async kickAllSessions(exceptUserId?: string) {
+    const now = new Date();
+    const qb = this.usersRepo
+      .createQueryBuilder()
+      .update(User)
+      .set({ sessionsValidAfter: now });
+    if (exceptUserId) {
+      qb.where('id != :exceptUserId', { exceptUserId });
+    }
+    const result = await qb.execute();
+    return { affected: result.affected ?? 0, sessionsValidAfter: now };
+  }
+
+  async kickTenantSessions(tenantId: string, exceptUserId?: string) {
+    if (!tenantId) {
+      throw new BadRequestException('tenantId é obrigatório');
+    }
+    const now = new Date();
+    const qb = this.usersRepo
+      .createQueryBuilder()
+      .update(User)
+      .set({ sessionsValidAfter: now })
+      .where('tenantId = :tenantId', { tenantId });
+    if (exceptUserId) {
+      qb.andWhere('id != :exceptUserId', { exceptUserId });
+    }
+    const result = await qb.execute();
+    return { affected: result.affected ?? 0, sessionsValidAfter: now };
+  }
+
+  async kickUserSession(userId: string) {
+    const user = await this.usersRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+    const now = new Date();
+    user.sessionsValidAfter = now;
+    await this.usersRepo.save(user);
+    return { affected: 1, sessionsValidAfter: now };
+  }
+
   private async generateTokens(user: User, enabledModules: string[]) {
     const payload = {
       sub: user.id,

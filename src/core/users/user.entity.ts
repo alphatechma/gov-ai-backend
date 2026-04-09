@@ -57,6 +57,9 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   lastLoginAt: Date;
 
+  @Column({ type: 'timestamp', nullable: true })
+  sessionsValidAfter: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
