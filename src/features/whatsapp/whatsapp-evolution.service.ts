@@ -13,6 +13,14 @@ import {
 } from './entities/whatsapp-message.entity';
 import { EventEmitter } from 'events';
 
+interface InstanceCache {
+  tenantId: string;
+  instanceName: string;
+  instanceToken: string;
+  status: ConnectionStatus;
+  qrCode: string | null;
+}
+
 @Injectable()
 export class WhatsappEvolutionService
   extends EventEmitter
@@ -23,16 +31,8 @@ export class WhatsappEvolutionService
   private readonly globalApiKey: string;
   private readonly webhookUrl: string;
 
-  /** In-memory cache: tenantId → { instanceName, instanceToken, status } */
-  private instances = new Map<
-    string,
-    {
-      instanceName: string;
-      instanceToken: string;
-      status: ConnectionStatus;
-      qrCode: string | null;
-    }
-  >();
+  /** In-memory cache keyed by connectionId. Supports multiple instances per tenant. */
+  private instances = new Map<string, InstanceCache>();
 
   constructor(
     private configService: ConfigService,
@@ -65,7 +65,7 @@ export class WhatsappEvolutionService
       if (!conn.instanceName || !conn.instanceToken) continue;
 
       this.logger.log(
-        `Restoring instance ${conn.instanceName} for tenant ${conn.tenantId}`,
+        `Restoring instance ${conn.instanceName} (connectionId=${conn.id}, tenant=${conn.tenantId})`,
       );
 
       try {
@@ -78,19 +78,33 @@ export class WhatsappEvolutionService
             ? ConnectionStatus.CONNECTED
             : ConnectionStatus.DISCONNECTED;
 
-        this.instances.set(conn.tenantId, {
+        this.instances.set(conn.id, {
+          tenantId: conn.tenantId,
           instanceName: conn.instanceName,
           instanceToken: conn.instanceToken,
           status,
           qrCode: null,
         });
 
-        if (status !== ConnectionStatus.CONNECTED) {
+        if (status === ConnectionStatus.CONNECTED) {
+          // Re-register webhook with connection-scoped URL (migrates old instances)
+          await this.configureWebhook(
+            conn.instanceName,
+            conn.instanceToken,
+            conn.tenantId,
+            conn.id,
+          ).catch((err) =>
+            this.logger.warn(
+              `Failed to refresh webhook for ${conn.id}: ${err.message}`,
+            ),
+          );
+        } else {
           await this.connectionRepo.update(conn.id, { status });
         }
       } catch (err) {
-        this.logger.error(`Failed to restore ${conn.tenantId}: ${err.message}`);
-        this.instances.set(conn.tenantId, {
+        this.logger.error(`Failed to restore ${conn.id}: ${err.message}`);
+        this.instances.set(conn.id, {
+          tenantId: conn.tenantId,
           instanceName: conn.instanceName,
           instanceToken: conn.instanceToken,
           status: ConnectionStatus.DISCONNECTED,
@@ -102,24 +116,28 @@ export class WhatsappEvolutionService
 
   // ── Connect / create instance ──
 
-  async connect(
-    tenantId: string,
-    connectionId: string,
-  ): Promise<string | null> {
-    const existing = this.instances.get(tenantId);
+  /**
+   * Connect (or reconnect) the given connection row to Evolution API.
+   * Returns the QR code (null if already connected).
+   */
+  async connect(connectionId: string): Promise<string | null> {
     const conn = await this.connectionRepo.findOne({
       where: { id: connectionId },
     });
     if (!conn) throw new Error('Conexão não encontrada');
 
+    const tenantId = conn.tenantId;
+    const existing = this.instances.get(connectionId);
+
+    // Instance name: reuse existing name or build one scoped to connectionId
     const instanceName =
       existing?.instanceName ||
-      `governeai_${tenantId.replace(/-/g, '').slice(0, 16)}`;
+      conn.instanceName ||
+      `governeai_c${connectionId.replace(/-/g, '').slice(0, 20)}`;
 
     // Try to get instanceToken from: in-memory cache → DB → Evolution API fetch
     let instanceToken = existing?.instanceToken || conn.instanceToken || '';
 
-    // If we don't have the token locally, check if instance exists in Evolution
     if (!instanceToken) {
       const fetched = await this.fetchExistingInstance(instanceName);
       if (fetched) {
@@ -138,17 +156,21 @@ export class WhatsappEvolutionService
           instanceToken,
         );
 
-        // Configure webhook (may have been lost)
-        await this.configureWebhook(instanceName, instanceToken, tenantId);
+        await this.configureWebhook(
+          instanceName,
+          instanceToken,
+          tenantId,
+          connectionId,
+        );
 
-        // Save token to DB if not already saved
         await this.connectionRepo.update(connectionId, {
           instanceName,
           instanceToken,
           status: ConnectionStatus.PENDING,
         });
 
-        this.instances.set(tenantId, {
+        this.instances.set(connectionId, {
+          tenantId,
           instanceName,
           instanceToken,
           status:
@@ -158,24 +180,20 @@ export class WhatsappEvolutionService
           qrCode: null,
         });
 
-        if (state === 'open') {
-          return null; // Already connected
-        }
+        if (state === 'open') return null;
 
-        // Instance exists but not connected, get QR code
         const qrCode = await this.fetchQrCode(instanceName, instanceToken);
-        const inst = this.instances.get(tenantId);
+        const inst = this.instances.get(connectionId);
         if (inst) inst.qrCode = qrCode;
 
         if (qrCode) {
-          this.emit('qr', { tenantId, qrCode });
+          this.emit('qr', { tenantId, connectionId, qrCode });
         }
         return qrCode;
       } catch (err) {
         this.logger.warn(
           `Existing instance ${instanceName} unreachable: ${err.message}, will recreate`,
         );
-        // Instance may have been deleted, fall through to create
       }
     }
 
@@ -184,37 +202,34 @@ export class WhatsappEvolutionService
     this.logger.log(
       `Instance created: ${JSON.stringify({ hash: result.hash, instance: result.instance, token: result.token })}`,
     );
-    // Evolution API v2: hash is a plain string (the instance token), not an object
     const newToken =
       (typeof result.hash === 'string' ? result.hash : result.hash?.apikey) ||
       result.token ||
       result.instance?.token ||
       '';
 
-    // Configure webhook for this instance
-    await this.configureWebhook(instanceName, newToken, tenantId);
+    await this.configureWebhook(instanceName, newToken, tenantId, connectionId);
 
-    // Save to DB
     await this.connectionRepo.update(connectionId, {
       instanceName,
       instanceToken: newToken,
       status: ConnectionStatus.PENDING,
     });
 
-    this.instances.set(tenantId, {
+    this.instances.set(connectionId, {
+      tenantId,
       instanceName,
       instanceToken: newToken,
       status: ConnectionStatus.PENDING,
       qrCode: null,
     });
 
-    // Fetch QR code
     const qrCode = await this.fetchQrCode(instanceName, newToken);
-    const inst = this.instances.get(tenantId);
+    const inst = this.instances.get(connectionId);
     if (inst) inst.qrCode = qrCode;
 
     if (qrCode) {
-      this.emit('qr', { tenantId, qrCode });
+      this.emit('qr', { tenantId, connectionId, qrCode });
     }
 
     return qrCode;
@@ -223,12 +238,12 @@ export class WhatsappEvolutionService
   // ── Send message ──
 
   async sendMessage(
-    tenantId: string,
+    connectionId: string,
     phone: string,
     content: string,
     quotedId?: string,
   ) {
-    const inst = await this.ensureInstance(tenantId);
+    const inst = await this.ensureInstance(connectionId);
     if (!inst) {
       throw new Error('WhatsApp não conectado');
     }
@@ -257,23 +272,22 @@ export class WhatsappEvolutionService
     );
 
     this.logger.log(
-      `[SEND_TEXT] response keys=${response ? Object.keys(response).join(',') : 'null'} key.id=${response?.key?.id} full=${JSON.stringify(response).substring(0, 300)}`,
+      `[SEND_TEXT] response keys=${response ? Object.keys(response).join(',') : 'null'} key.id=${response?.key?.id}`,
     );
 
-    // Look up existing remoteName for this contact
     const existingMsg = await this.messageRepo.findOne({
-      where: { tenantId, remotePhone: normalizedPhone },
+      where: {
+        tenantId: inst.tenantId,
+        connectionId,
+        remotePhone: normalizedPhone,
+      },
       select: ['remoteName'],
       order: { createdAt: 'DESC' },
     });
 
-    const conn = await this.connectionRepo.findOne({
-      where: { tenantId },
-    });
-
     const entity = this.messageRepo.create({
-      tenantId,
-      connectionId: conn?.id || '',
+      tenantId: inst.tenantId,
+      connectionId,
       remoteJid: `${normalizedPhone}@s.whatsapp.net`,
       remotePhone: normalizedPhone,
       remoteName: existingMsg?.remoteName || undefined,
@@ -284,19 +298,20 @@ export class WhatsappEvolutionService
       externalId: response?.key?.id || undefined,
     });
 
-    return this.messageRepo.save(entity);
+    const saved = await this.messageRepo.save(entity);
+    this.emit('message', { tenantId: inst.tenantId, connectionId, message: saved });
+    return saved;
   }
 
   // ── Broadcast ──
 
-  async broadcast(tenantId: string, phones: string[], content: string) {
+  async broadcast(connectionId: string, phones: string[], content: string) {
     const results: { phone: string; success: boolean; error?: string }[] = [];
 
     for (const phone of phones) {
       try {
-        await this.sendMessage(tenantId, phone, content);
+        await this.sendMessage(connectionId, phone, content);
         results.push({ phone, success: true });
-        // Rate limit: 1.5-3s delay between messages
         await this.delay(1500 + Math.random() * 1500);
       } catch (err) {
         results.push({ phone, success: false, error: err.message });
@@ -313,59 +328,78 @@ export class WhatsappEvolutionService
 
   // ── Disconnect ──
 
-  async disconnect(tenantId: string) {
-    const inst = this.instances.get(tenantId);
-    if (!inst) return;
+  async disconnect(connectionId: string) {
+    const inst = this.instances.get(connectionId);
 
-    try {
-      await this.apiCall(
-        'DELETE',
-        `/instance/logout/${inst.instanceName}`,
-        null,
-        inst.instanceToken,
-      );
-    } catch (err) {
-      this.logger.warn(`Logout failed for tenant ${tenantId}: ${err.message}`);
-    }
+    // Fall back to DB if not in cache
+    let instanceName = inst?.instanceName;
+    let instanceToken = inst?.instanceToken;
+    let tenantId = inst?.tenantId;
 
-    try {
-      await this.apiCall(
-        'DELETE',
-        `/instance/delete/${inst.instanceName}`,
-        null,
-        this.globalApiKey,
-      );
-    } catch (err) {
-      this.logger.warn(
-        `Delete instance failed for ${tenantId}: ${err.message}`,
-      );
-    }
-
-    this.instances.delete(tenantId);
-
-    const conn = await this.connectionRepo.findOne({ where: { tenantId } });
-    if (conn) {
-      await this.connectionRepo.update(conn.id, {
-        status: ConnectionStatus.DISCONNECTED,
-        instanceName: undefined,
-        instanceToken: undefined,
+    if (!instanceName) {
+      const conn = await this.connectionRepo.findOne({
+        where: { id: connectionId },
       });
+      if (!conn) return;
+      instanceName = conn.instanceName || undefined;
+      instanceToken = conn.instanceToken || undefined;
+      tenantId = conn.tenantId;
     }
 
-    this.emit('disconnected', { tenantId, loggedOut: true });
+    if (instanceName && instanceToken) {
+      try {
+        await this.apiCall(
+          'DELETE',
+          `/instance/logout/${instanceName}`,
+          null,
+          instanceToken,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Logout failed for ${connectionId}: ${err.message}`,
+        );
+      }
+
+      try {
+        await this.apiCall(
+          'DELETE',
+          `/instance/delete/${instanceName}`,
+          null,
+          this.globalApiKey,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Delete instance failed for ${connectionId}: ${err.message}`,
+        );
+      }
+    }
+
+    this.instances.delete(connectionId);
+
+    await this.connectionRepo.update(connectionId, {
+      status: ConnectionStatus.DISCONNECTED,
+      instanceName: undefined,
+      instanceToken: undefined,
+    });
+
+    if (tenantId) {
+      this.emit('disconnected', { tenantId, connectionId, loggedOut: true });
+    }
   }
 
   // ── Status ──
 
-  async getStatus(tenantId: string): Promise<{
+  async getStatus(connectionId: string): Promise<{
     status: ConnectionStatus | 'DISCONNECTED';
     qrCode: string | null;
   }> {
-    const inst = this.instances.get(tenantId);
+    const inst = this.instances.get(connectionId);
     if (inst) return { status: inst.status, qrCode: inst.qrCode };
 
     // Cache miss — check DB + Evolution API to rebuild cache
-    const conn = await this.connectionRepo.findOne({ where: { tenantId } });
+    const conn = await this.connectionRepo.findOne({
+      where: { id: connectionId },
+    });
     if (!conn?.instanceName || !conn?.instanceToken) {
       return { status: 'DISCONNECTED', qrCode: null };
     }
@@ -382,15 +416,14 @@ export class WhatsappEvolutionService
             ? ConnectionStatus.PENDING
             : ConnectionStatus.DISCONNECTED;
 
-      // Rebuild cache
-      this.instances.set(tenantId, {
+      this.instances.set(connectionId, {
+        tenantId: conn.tenantId,
         instanceName: conn.instanceName,
         instanceToken: conn.instanceToken,
         status,
         qrCode: null,
       });
 
-      // Sync DB if status changed
       if (conn.status !== status) {
         await this.connectionRepo.update(conn.id, { status });
       }
@@ -398,63 +431,105 @@ export class WhatsappEvolutionService
       return { status, qrCode: null };
     } catch (err) {
       this.logger.warn(
-        `getStatus: failed to fetch state for tenant ${tenantId} instance ${conn.instanceName}: ${err.message}`,
+        `getStatus: failed to fetch state for connection ${connectionId}: ${err.message}`,
       );
       return { status: 'DISCONNECTED', qrCode: null };
     }
   }
 
-  async isConnected(tenantId: string): Promise<boolean> {
-    const { status } = await this.getStatus(tenantId);
+  async isConnected(connectionId: string): Promise<boolean> {
+    const { status } = await this.getStatus(connectionId);
     return status === ConnectionStatus.CONNECTED;
   }
 
   // ── Webhook Handlers ──
 
-  async handleWebhook(tenantId: string, event: string, data: any) {
-    this.logger.log(`Webhook [${event}] for tenant ${tenantId}`);
+  /**
+   * Route an inbound Evolution webhook to the correct connection.
+   * If `connectionId` is null (legacy route), resolve it via the tenant's default connection.
+   */
+  async handleWebhook(
+    tenantId: string,
+    connectionId: string | null,
+    event: string,
+    data: any,
+  ) {
+    let resolvedConnectionId = connectionId;
+
+    if (!resolvedConnectionId) {
+      // Legacy webhook: find the default (or first) connection for this tenant
+      const conn =
+        (await this.connectionRepo.findOne({
+          where: { tenantId, isDefault: true },
+        })) ||
+        (await this.connectionRepo.findOne({
+          where: { tenantId },
+          order: { createdAt: 'ASC' },
+        }));
+
+      if (!conn) {
+        this.logger.warn(
+          `Legacy webhook for tenant ${tenantId} but no connection found`,
+        );
+        return;
+      }
+      resolvedConnectionId = conn.id;
+    }
+
+    this.logger.log(
+      `Webhook [${event}] tenant=${tenantId} connection=${resolvedConnectionId}`,
+    );
 
     switch (event) {
       case 'QRCODE_UPDATED':
-        await this.handleQrCodeUpdate(tenantId, data);
+        await this.handleQrCodeUpdate(tenantId, resolvedConnectionId, data);
         break;
       case 'CONNECTION_UPDATE':
-        await this.handleConnectionUpdate(tenantId, data);
+        await this.handleConnectionUpdate(tenantId, resolvedConnectionId, data);
         break;
       case 'MESSAGES_UPSERT':
-        await this.handleMessagesUpsert(tenantId, data);
+        await this.handleMessagesUpsert(tenantId, resolvedConnectionId, data);
         break;
       case 'MESSAGES_UPDATE':
-        await this.handleMessagesUpdate(tenantId, data);
+        await this.handleMessagesUpdate(tenantId, resolvedConnectionId, data);
         break;
     }
   }
 
-  private async handleQrCodeUpdate(tenantId: string, data: any) {
+  private async handleQrCodeUpdate(
+    tenantId: string,
+    connectionId: string,
+    data: any,
+  ) {
     const qrCode = data?.qrcode?.base64 || data?.qrcode;
-    const inst = this.instances.get(tenantId);
+    const inst = this.instances.get(connectionId);
     if (inst && qrCode) {
       inst.qrCode = qrCode;
       inst.status = ConnectionStatus.PENDING;
-      this.emit('qr', { tenantId, qrCode });
+      this.emit('qr', { tenantId, connectionId, qrCode });
     }
   }
 
-  private async handleConnectionUpdate(tenantId: string, data: any) {
+  private async handleConnectionUpdate(
+    tenantId: string,
+    connectionId: string,
+    data: any,
+  ) {
     const state = data?.state || data?.status || data?.instance?.state;
     this.logger.log(
-      `[CONNECTION_UPDATE] state="${state}" data keys: ${data ? Object.keys(data).join(',') : 'null'}`,
+      `[CONNECTION_UPDATE] state="${state}" connection=${connectionId}`,
     );
-    const inst = this.instances.get(tenantId);
+    const inst = this.instances.get(connectionId);
     if (!inst) return;
 
     if (state === 'open') {
       inst.status = ConnectionStatus.CONNECTED;
       inst.qrCode = null;
 
-      const conn = await this.connectionRepo.findOne({ where: { tenantId } });
+      const conn = await this.connectionRepo.findOne({
+        where: { id: connectionId },
+      });
       if (conn) {
-        // Fetch instance info to get phone number
         try {
           const info = await this.apiCall(
             'GET',
@@ -473,13 +548,19 @@ export class WhatsappEvolutionService
             pushName,
           });
 
-          this.emit('connected', { tenantId, phoneNumber, pushName });
+          this.emit('connected', {
+            tenantId,
+            connectionId,
+            phoneNumber,
+            pushName,
+          });
         } catch {
           await this.connectionRepo.update(conn.id, {
             status: ConnectionStatus.CONNECTED,
           });
           this.emit('connected', {
             tenantId,
+            connectionId,
             phoneNumber: conn.phoneNumber,
             pushName: conn.pushName,
           });
@@ -489,31 +570,27 @@ export class WhatsappEvolutionService
       inst.status = ConnectionStatus.DISCONNECTED;
       inst.qrCode = null;
 
-      const conn = await this.connectionRepo.findOne({ where: { tenantId } });
-      if (conn) {
-        await this.connectionRepo.update(conn.id, {
-          status: ConnectionStatus.DISCONNECTED,
-        });
-      }
+      await this.connectionRepo.update(connectionId, {
+        status: ConnectionStatus.DISCONNECTED,
+      });
 
-      this.emit('disconnected', { tenantId, loggedOut: false });
+      this.emit('disconnected', { tenantId, connectionId, loggedOut: false });
     }
   }
 
-  private async handleMessagesUpsert(tenantId: string, data: any) {
+  private async handleMessagesUpsert(
+    tenantId: string,
+    connectionId: string,
+    data: any,
+  ) {
     this.logger.log(
-      `[MESSAGES_UPSERT] raw data type=${typeof data}, isArray=${Array.isArray(data)}, keys=${data ? Object.keys(data).join(',') : 'null'}`,
+      `[MESSAGES_UPSERT] connection=${connectionId} type=${typeof data}, isArray=${Array.isArray(data)}`,
     );
 
-    // Evolution API v2 sends data in various formats:
-    // - Single message object with key/message at root
-    // - Array of message objects
-    // - Object with a nested "messages" array (Baileys-style)
     let messages: any[];
     if (Array.isArray(data)) {
       messages = data;
     } else if (data?.key) {
-      // Single message object directly
       messages = [data];
     } else {
       messages = [data];
@@ -522,23 +599,19 @@ export class WhatsappEvolutionService
     for (const msg of messages) {
       const key = msg.key;
       if (!key) {
-        this.logger.warn(
-          `[MESSAGES_UPSERT] message without key, skipping. Keys: ${msg ? Object.keys(msg).join(',') : 'null'}`,
-        );
+        this.logger.warn(`[MESSAGES_UPSERT] message without key, skipping`);
         continue;
       }
 
       const isFromMe = !!key.fromMe;
-
       const remoteJid = key.remoteJid || '';
-      // Skip group messages
+
       if (remoteJid.includes('@g.us')) continue;
 
-      // Skip if we already have this message (sent via the system)
       const externalId = key.id || undefined;
       if (isFromMe && externalId) {
         const exists = await this.messageRepo.findOne({
-          where: { tenantId, externalId },
+          where: { tenantId, connectionId, externalId },
           select: ['id'],
         });
         if (exists) continue;
@@ -551,13 +624,16 @@ export class WhatsappEvolutionService
       const message = msg.message || {};
       const msgType = this.getMessageType(message);
 
-      // Handle reactions: update the original message instead of creating a new one
       if (msgType === 'reaction') {
-        await this.handleReaction(tenantId, message.reactionMessage, remotePhone);
+        await this.handleReaction(
+          tenantId,
+          connectionId,
+          message.reactionMessage,
+          remotePhone,
+        );
         continue;
       }
 
-      // Skip protocol messages (message edits, deletes, read receipts, etc.)
       if (msgType === 'protocol' || msgType === 'edited') continue;
 
       const content =
@@ -577,20 +653,20 @@ export class WhatsappEvolutionService
           : '') ||
         '[midia]';
 
-      // Mark that this message has media (will be fetched via proxy endpoint)
-      const hasMedia = this.extractMediaBase64(message, msgType) !== null
-        || ['image', 'video', 'audio', 'sticker', 'document'].includes(msgType);
+      const hasMedia =
+        this.extractMediaBase64(message, msgType) !== null ||
+        ['image', 'video', 'audio', 'sticker', 'document'].includes(msgType);
       const mediaUrl = hasMedia ? 'proxy' : undefined;
 
-      const direction = isFromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND;
-
-      const conn = await this.connectionRepo.findOne({ where: { tenantId } });
+      const direction = isFromMe
+        ? MessageDirection.OUTBOUND
+        : MessageDirection.INBOUND;
 
       try {
         const normalizedJid = `${remotePhone}@s.whatsapp.net`;
         const entity = this.messageRepo.create({
           tenantId,
-          connectionId: conn?.id || '',
+          connectionId,
           remoteJid: normalizedJid,
           remoteName: isFromMe ? undefined : pushName,
           remotePhone,
@@ -605,16 +681,20 @@ export class WhatsappEvolutionService
         const saved = await this.messageRepo.save(entity);
 
         this.logger.log(
-          `${isFromMe ? 'Outbound (phone)' : 'Incoming'} message ${remotePhone}: type=${msgType}${mediaUrl ? ' [media]' : ''}`,
+          `${isFromMe ? 'Outbound (phone)' : 'Incoming'} ${remotePhone}: type=${msgType} connection=${connectionId}`,
         );
-        this.emit('message', { tenantId, message: saved });
+        this.emit('message', { tenantId, connectionId, message: saved });
       } catch (err) {
         this.logger.error(`Failed to save incoming message: ${err.message}`);
       }
     }
   }
 
-  private async handleMessagesUpdate(tenantId: string, data: any) {
+  private async handleMessagesUpdate(
+    tenantId: string,
+    connectionId: string,
+    data: any,
+  ) {
     const updates = Array.isArray(data) ? data : [data];
 
     const statusMap: Record<string, MessageStatus> = {
@@ -635,7 +715,6 @@ export class WhatsappEvolutionService
     };
 
     for (const update of updates) {
-      // Evolution API v2 sends keyId at root level, not nested in key.id
       const keyId = update.keyId || update.key?.id;
       if (!keyId) continue;
 
@@ -652,18 +731,19 @@ export class WhatsappEvolutionService
         (typeof rawStatus === 'number' ? numericMap[rawStatus] : undefined);
 
       this.logger.log(
-        `[MESSAGES_UPDATE] keyId=${keyId} rawStatus=${rawStatus} mapped=${mapped || 'UNMAPPED'}`,
+        `[MESSAGES_UPDATE] keyId=${keyId} connection=${connectionId} raw=${rawStatus} mapped=${mapped || 'UNMAPPED'}`,
       );
 
       if (mapped) {
         const result = await this.messageRepo.update(
-          { externalId: keyId, tenantId },
+          { externalId: keyId, tenantId, connectionId },
           { status: mapped },
         );
 
         if (result.affected && result.affected > 0) {
           this.emit('message:status', {
             tenantId,
+            connectionId,
             externalId: keyId,
             status: mapped,
           });
@@ -727,6 +807,7 @@ export class WhatsappEvolutionService
     instanceName: string,
     instanceToken: string,
     tenantId: string,
+    connectionId: string,
   ) {
     if (!this.webhookUrl) {
       this.logger.warn(
@@ -735,7 +816,7 @@ export class WhatsappEvolutionService
       return;
     }
 
-    const webhookUrl = `${this.webhookUrl}/${tenantId}`;
+    const webhookUrl = `${this.webhookUrl}/${tenantId}/${connectionId}`;
 
     await this.apiCall(
       'POST',
@@ -760,10 +841,6 @@ export class WhatsappEvolutionService
     this.logger.log(`Webhook configured for ${instanceName}: ${webhookUrl}`);
   }
 
-  /**
-   * Try to find an existing instance in Evolution API by name.
-   * Returns the instance token if found, null otherwise.
-   */
   private async fetchExistingInstance(
     instanceName: string,
   ): Promise<{ token: string } | null> {
@@ -775,7 +852,6 @@ export class WhatsappEvolutionService
         this.globalApiKey,
       );
 
-      // Response is an array of instance objects
       const instances = Array.isArray(result)
         ? result
         : result?.instances || [];
@@ -789,7 +865,6 @@ export class WhatsappEvolutionService
 
       if (!instance) return null;
 
-      // Evolution API v2 returns token at root level
       const token =
         instance?.token || instance?.instance?.apikey || instance?.apikey || '';
 
@@ -803,20 +878,17 @@ export class WhatsappEvolutionService
   }
 
   /**
-   * Ensure instance is in the in-memory map. If not, try lazy-restoring from DB + Evolution API.
+   * Ensure instance is in the in-memory map. If not, lazy-restore from DB.
    */
-  private async ensureInstance(tenantId: string): Promise<{
-    instanceName: string;
-    instanceToken: string;
-    status: ConnectionStatus;
-  } | null> {
-    let inst = this.instances.get(tenantId);
+  private async ensureInstance(
+    connectionId: string,
+  ): Promise<InstanceCache | null> {
+    let inst = this.instances.get(connectionId);
     if (inst && inst.status === ConnectionStatus.CONNECTED) return inst;
 
-    // Try lazy restore via getStatus (which rebuilds cache from DB + Evolution API)
-    const { status } = await this.getStatus(tenantId);
+    const { status } = await this.getStatus(connectionId);
     if (status === ConnectionStatus.CONNECTED) {
-      inst = this.instances.get(tenantId);
+      inst = this.instances.get(connectionId);
       if (inst) return inst;
     }
 
@@ -857,32 +929,23 @@ export class WhatsappEvolutionService
 
   /**
    * Normalize any phone to 55 + DDD(2) + 9 + number(8) = 13 digits for mobile.
-   * Handles the Brazilian 9th digit inconsistency where WhatsApp JIDs may
-   * arrive as 5511XXXX8888 (12 digits, missing the 9) instead of 55119XXXX8888 (13 digits).
    */
   normalizePhone(phone: string): string {
     const clean = phone.replace(/\D/g, '');
 
-    // Already correct: 55 + DDD(2) + 9XXXXXXXX(9) = 13 digits
     if (clean.length === 13 && clean.startsWith('55')) return clean;
 
-    // 55 + DDD(2) + XXXXXXXX(8) = 12 digits — missing 9th digit (mobile)
-    // Add 9 after DDD for mobile numbers (DDD >= 11)
     if (clean.length === 12 && clean.startsWith('55')) {
       const ddd = clean.slice(2, 4);
       const number = clean.slice(4);
-      // Brazilian mobile DDDs are 11-99; landlines start with 2-5
-      // If number starts with [6-9], it's mobile and needs the 9 prefix
       if (number[0] >= '6') {
         return `55${ddd}9${number}`;
       }
-      return clean; // Landline, keep as-is (12 digits)
+      return clean;
     }
 
-    // DDD(2) + 9XXXXXXXX(9) = 11 digits — missing country code
     if (clean.length === 11) return `55${clean}`;
 
-    // DDD(2) + XXXXXXXX(8) = 10 digits — missing country code + maybe 9th digit
     if (clean.length === 10) {
       const ddd = clean.slice(0, 2);
       const number = clean.slice(2);
@@ -898,29 +961,35 @@ export class WhatsappEvolutionService
   // ── Send media message ──
 
   async sendMedia(
-    tenantId: string,
+    connectionId: string,
     phone: string,
     mediaBuffer: Buffer,
     mimetype: string,
     filename: string,
     caption?: string,
   ) {
-    const inst = await this.ensureInstance(tenantId);
+    const inst = await this.ensureInstance(connectionId);
     if (!inst) {
       throw new Error('WhatsApp não conectado');
     }
 
     const normalizedPhone = this.normalizePhone(phone);
 
-    // Determine media type for Evolution API (must be capitalized)
     const isImage = mimetype.startsWith('image/');
     const isVideo = mimetype.startsWith('video/');
     const isAudio = mimetype.startsWith('audio/');
     let mediatype = 'Document';
     let internalType = 'document';
-    if (isImage) { mediatype = 'Image'; internalType = 'image'; }
-    else if (isVideo) { mediatype = 'Video'; internalType = 'video'; }
-    else if (isAudio) { mediatype = 'Audio'; internalType = 'audio'; }
+    if (isImage) {
+      mediatype = 'Image';
+      internalType = 'image';
+    } else if (isVideo) {
+      mediatype = 'Video';
+      internalType = 'video';
+    } else if (isAudio) {
+      mediatype = 'Audio';
+      internalType = 'audio';
+    }
 
     const base64 = mediaBuffer.toString('base64');
 
@@ -940,22 +1009,24 @@ export class WhatsappEvolutionService
       inst.instanceToken,
     );
 
-    // Look up existing remoteName
     const existingMsg = await this.messageRepo.findOne({
-      where: { tenantId, remotePhone: normalizedPhone },
+      where: {
+        tenantId: inst.tenantId,
+        connectionId,
+        remotePhone: normalizedPhone,
+      },
       select: ['remoteName'],
       order: { createdAt: 'DESC' },
     });
 
-    const conn = await this.connectionRepo.findOne({ where: { tenantId } });
-
     const entity = this.messageRepo.create({
-      tenantId,
-      connectionId: conn?.id || '',
+      tenantId: inst.tenantId,
+      connectionId,
       remoteJid: `${normalizedPhone}@s.whatsapp.net`,
       remotePhone: normalizedPhone,
       remoteName: existingMsg?.remoteName || undefined,
-      content: caption || `[${internalType === 'image' ? 'imagem' : internalType}]`,
+      content:
+        caption || `[${internalType === 'image' ? 'imagem' : internalType}]`,
       type: internalType,
       direction: MessageDirection.OUTBOUND,
       status: MessageStatus.SENT,
@@ -963,17 +1034,19 @@ export class WhatsappEvolutionService
       mediaUrl: 'proxy',
     });
 
-    return this.messageRepo.save(entity);
+    const saved = await this.messageRepo.save(entity);
+    this.emit('message', { tenantId: inst.tenantId, connectionId, message: saved });
+    return saved;
   }
 
   // ── Fetch media from Evolution API (proxy) ──
 
   async getMediaBase64(
-    tenantId: string,
+    connectionId: string,
     messageExternalId: string,
     remoteJid: string,
   ): Promise<{ base64: string; mimetype: string } | null> {
-    const inst = await this.ensureInstance(tenantId);
+    const inst = await this.ensureInstance(connectionId);
     if (!inst) return null;
 
     try {
@@ -1007,6 +1080,7 @@ export class WhatsappEvolutionService
 
   private async handleReaction(
     tenantId: string,
+    connectionId: string,
     reactionMsg: any,
     senderPhone: string,
   ) {
@@ -1016,12 +1090,12 @@ export class WhatsappEvolutionService
     const emoji = reactionMsg.text || '';
 
     const original = await this.messageRepo.findOne({
-      where: { tenantId, externalId: originalExternalId },
+      where: { tenantId, connectionId, externalId: originalExternalId },
     });
 
     if (!original) {
       this.logger.warn(
-        `Reaction target not found: externalId=${originalExternalId}`,
+        `Reaction target not found: externalId=${originalExternalId} connection=${connectionId}`,
       );
       return;
     }
@@ -1029,7 +1103,6 @@ export class WhatsappEvolutionService
     const reactions = original.reactions || [];
 
     if (emoji) {
-      // Add or update reaction from this sender
       const idx = reactions.findIndex((r) => r.from === senderPhone);
       if (idx >= 0) {
         reactions[idx].emoji = emoji;
@@ -1037,7 +1110,6 @@ export class WhatsappEvolutionService
         reactions.push({ emoji, from: senderPhone });
       }
     } else {
-      // Empty text = remove reaction from this sender
       const idx = reactions.findIndex((r) => r.from === senderPhone);
       if (idx >= 0) reactions.splice(idx, 1);
     }
@@ -1048,16 +1120,19 @@ export class WhatsappEvolutionService
       `Reaction ${emoji || '(removed)'} on message ${original.id} from ${senderPhone}`,
     );
 
-    // Emit event so frontend can update in real-time
     this.emit('message', {
       tenantId,
+      connectionId,
       message: { ...original, reactions },
     });
   }
 
   // ── Extract and save media from incoming webhook ──
 
-  private extractMediaBase64(message: any, msgType: string): { base64: string; mimetype: string } | null {
+  private extractMediaBase64(
+    message: any,
+    msgType: string,
+  ): { base64: string; mimetype: string } | null {
     const mediaTypes = ['image', 'video', 'audio', 'sticker', 'document'];
     if (!mediaTypes.includes(msgType)) return null;
 
@@ -1071,11 +1146,13 @@ export class WhatsappEvolutionService
 
     if (!mediaMsg) return null;
 
-    // webhook_base64: true sends base64 in the media message
     const base64 = mediaMsg.base64;
     if (!base64) return null;
 
-    return { base64, mimetype: mediaMsg.mimetype || 'application/octet-stream' };
+    return {
+      base64,
+      mimetype: mediaMsg.mimetype || 'application/octet-stream',
+    };
   }
 
   private getMessageType(msg: any): string {

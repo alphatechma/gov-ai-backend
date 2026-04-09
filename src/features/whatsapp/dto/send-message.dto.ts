@@ -1,6 +1,17 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsBoolean,
+  IsArray,
+  IsUUID,
+} from 'class-validator';
 
 export class SendMessageDto {
+  @IsUUID()
+  @IsNotEmpty()
+  connectionId: string;
+
   @IsString()
   @IsNotEmpty()
   phone: string;
@@ -15,6 +26,11 @@ export class SendMessageDto {
 }
 
 export class BroadcastDto {
+  @IsUUID()
+  @IsNotEmpty()
+  connectionId: string;
+
+  @IsArray()
   @IsString({ each: true })
   @IsNotEmpty()
   phones: string[];
@@ -22,4 +38,20 @@ export class BroadcastDto {
   @IsString()
   @IsNotEmpty()
   content: string;
+}
+
+export class CreateConnectionDto {
+  @IsString()
+  @IsOptional()
+  label?: string;
+}
+
+export class UpdateConnectionDto {
+  @IsString()
+  @IsOptional()
+  label?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isDefault?: boolean;
 }

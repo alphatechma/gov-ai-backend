@@ -1,6 +1,11 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike, MoreThanOrEqual } from 'typeorm';
+import { Repository, ILike } from 'typeorm';
 import * as ExcelJS from 'exceljs';
 import {
   WhatsappConnection,
@@ -24,13 +29,35 @@ export class WhatsappService {
     private evolution: WhatsappEvolutionService,
   ) {}
 
-  // ── Connection Management ──
+  // ── Connection Management (multi-instance) ──
 
-  async getConnection(tenantId: string) {
-    const conn = await this.connectionRepo.findOne({ where: { tenantId } });
-    if (!conn) return null;
+  /** List all WhatsApp connections for a tenant with live status. */
+  async listConnections(tenantId: string) {
+    const conns = await this.connectionRepo.find({
+      where: { tenantId },
+      order: { isDefault: 'DESC', createdAt: 'ASC' },
+    });
 
-    const live = await this.evolution.getStatus(tenantId);
+    const result: any[] = [];
+    for (const conn of conns) {
+      const live = await this.evolution.getStatus(conn.id);
+      result.push({
+        ...conn,
+        liveStatus: live.status,
+        qrCode: live.qrCode,
+      });
+    }
+    return result;
+  }
+
+  /** Fetch a single connection with ownership check. */
+  async getConnectionById(tenantId: string, connectionId: string) {
+    const conn = await this.connectionRepo.findOne({
+      where: { id: connectionId, tenantId },
+    });
+    if (!conn) throw new NotFoundException('Conexão não encontrada');
+
+    const live = await this.evolution.getStatus(conn.id);
     return {
       ...conn,
       liveStatus: live.status,
@@ -38,69 +65,227 @@ export class WhatsappService {
     };
   }
 
-  async startConnection(tenantId: string, userId: string) {
-    let conn = await this.connectionRepo.findOne({ where: { tenantId } });
+  /**
+   * Create a brand new connection and initiate QR pairing.
+   * If the tenant has no existing connection, marks this one as default.
+   */
+  async createConnection(
+    tenantId: string,
+    userId: string,
+    label?: string,
+  ) {
+    const existingCount = await this.connectionRepo.count({
+      where: { tenantId },
+    });
 
-    if (!conn) {
-      conn = await this.connectionRepo.save(
-        this.connectionRepo.create({
-          tenantId,
-          status: ConnectionStatus.PENDING,
-          connectedBy: userId,
-        }),
-      );
-    } else {
-      await this.connectionRepo.update(conn.id, {
-        status: ConnectionStatus.PENDING,
-        connectedBy: userId,
-      });
-      conn.status = ConnectionStatus.PENDING;
-    }
+    const entity = this.connectionRepo.create({
+      tenantId,
+      label: label || undefined,
+      isDefault: existingCount === 0,
+      status: ConnectionStatus.PENDING,
+      connectedBy: userId,
+    });
+    const conn = await this.connectionRepo.save(entity);
 
-    await this.evolution.connect(tenantId, conn.id);
+    const qrCode = await this.evolution.connect(conn.id);
+    const live = await this.evolution.getStatus(conn.id);
 
-    const live = await this.evolution.getStatus(tenantId);
     return {
       connectionId: conn.id,
       status: live.status,
+      qrCode: qrCode ?? live.qrCode,
+    };
+  }
+
+  /** Start/reconnect an existing connection (re-fetch QR code). */
+  async startConnection(
+    tenantId: string,
+    connectionId: string,
+    userId: string,
+  ) {
+    const conn = await this.connectionRepo.findOne({
+      where: { id: connectionId, tenantId },
+    });
+    if (!conn) throw new NotFoundException('Conexão não encontrada');
+
+    await this.connectionRepo.update(conn.id, {
+      status: ConnectionStatus.PENDING,
+      connectedBy: userId,
+    });
+
+    const qrCode = await this.evolution.connect(conn.id);
+    const live = await this.evolution.getStatus(conn.id);
+
+    return {
+      connectionId: conn.id,
+      status: live.status,
+      qrCode: qrCode ?? live.qrCode,
+    };
+  }
+
+  /** Update connection metadata (label, default flag). */
+  async updateConnection(
+    tenantId: string,
+    connectionId: string,
+    dto: { label?: string; isDefault?: boolean },
+  ) {
+    const conn = await this.connectionRepo.findOne({
+      where: { id: connectionId, tenantId },
+    });
+    if (!conn) throw new NotFoundException('Conexão não encontrada');
+
+    if (dto.isDefault === true) {
+      // Un-default all other connections for this tenant
+      await this.connectionRepo.update(
+        { tenantId, isDefault: true },
+        { isDefault: false },
+      );
+    }
+
+    await this.connectionRepo.update(connectionId, {
+      ...(dto.label !== undefined && { label: dto.label }),
+      ...(dto.isDefault !== undefined && { isDefault: dto.isDefault }),
+    });
+
+    return this.getConnectionById(tenantId, connectionId);
+  }
+
+  /** Disconnect a specific connection (logs out but keeps the DB row). */
+  async disconnectConnection(tenantId: string, connectionId: string) {
+    const conn = await this.connectionRepo.findOne({
+      where: { id: connectionId, tenantId },
+    });
+    if (!conn) throw new NotFoundException('Conexão não encontrada');
+
+    await this.evolution.disconnect(connectionId);
+    return { message: 'Desconectado com sucesso' };
+  }
+
+  /** Fully delete a connection (disconnect + remove DB row). Messages are kept. */
+  async deleteConnection(tenantId: string, connectionId: string) {
+    const conn = await this.connectionRepo.findOne({
+      where: { id: connectionId, tenantId },
+    });
+    if (!conn) throw new NotFoundException('Conexão não encontrada');
+
+    await this.evolution.disconnect(connectionId);
+    await this.connectionRepo.delete(connectionId);
+
+    // If the deleted one was default, promote another to default
+    if (conn.isDefault) {
+      const next = await this.connectionRepo.findOne({
+        where: { tenantId },
+        order: { createdAt: 'ASC' },
+      });
+      if (next) {
+        await this.connectionRepo.update(next.id, { isDefault: true });
+      }
+    }
+
+    return { message: 'Conexão removida' };
+  }
+
+  /** Validates that the given connection belongs to the tenant. Returns the connection. */
+  private async assertOwnership(
+    tenantId: string,
+    connectionId: string,
+  ): Promise<WhatsappConnection> {
+    const conn = await this.connectionRepo.findOne({
+      where: { id: connectionId, tenantId },
+    });
+    if (!conn) throw new NotFoundException('Conexão não encontrada');
+    return conn;
+  }
+
+  // ── Legacy singular endpoint (returns the default / first connection) ──
+
+  async getConnection(tenantId: string) {
+    const conn =
+      (await this.connectionRepo.findOne({
+        where: { tenantId, isDefault: true },
+      })) ||
+      (await this.connectionRepo.findOne({
+        where: { tenantId },
+        order: { createdAt: 'ASC' },
+      }));
+
+    if (!conn) return null;
+
+    const live = await this.evolution.getStatus(conn.id);
+    return {
+      ...conn,
+      liveStatus: live.status,
       qrCode: live.qrCode,
     };
   }
 
-  async disconnectConnection(tenantId: string) {
-    await this.evolution.disconnect(tenantId);
-    return { message: 'Desconectado com sucesso' };
+  /** Legacy start endpoint: creates first connection or reconnects existing default. */
+  async legacyStartConnection(tenantId: string, userId: string) {
+    const existing =
+      (await this.connectionRepo.findOne({
+        where: { tenantId, isDefault: true },
+      })) ||
+      (await this.connectionRepo.findOne({
+        where: { tenantId },
+        order: { createdAt: 'ASC' },
+      }));
+
+    if (existing) {
+      return this.startConnection(tenantId, existing.id, userId);
+    }
+    return this.createConnection(tenantId, userId);
+  }
+
+  /** Legacy disconnect: disconnects the default connection. */
+  async legacyDisconnect(tenantId: string) {
+    const conn =
+      (await this.connectionRepo.findOne({
+        where: { tenantId, isDefault: true },
+      })) ||
+      (await this.connectionRepo.findOne({
+        where: { tenantId },
+        order: { createdAt: 'ASC' },
+      }));
+    if (!conn) return { message: 'Nenhuma conexão encontrada' };
+
+    return this.disconnectConnection(tenantId, conn.id);
   }
 
   // ── Messaging ──
 
   async sendMessage(
     tenantId: string,
+    connectionId: string,
     phone: string,
     content: string,
     quotedId?: string,
   ) {
-    if (!(await this.evolution.isConnected(tenantId))) {
+    await this.assertOwnership(tenantId, connectionId);
+
+    if (!(await this.evolution.isConnected(connectionId))) {
       throw new BadRequestException(
         'WhatsApp não está conectado. Conecte primeiro.',
       );
     }
-    return this.evolution.sendMessage(tenantId, phone, content, quotedId);
+    return this.evolution.sendMessage(connectionId, phone, content, quotedId);
   }
 
   async sendMedia(
     tenantId: string,
+    connectionId: string,
     phone: string,
     file: { buffer: Buffer; mimetype: string; originalname: string },
     caption?: string,
   ) {
-    if (!(await this.evolution.isConnected(tenantId))) {
+    await this.assertOwnership(tenantId, connectionId);
+
+    if (!(await this.evolution.isConnected(connectionId))) {
       throw new BadRequestException(
         'WhatsApp não está conectado. Conecte primeiro.',
       );
     }
     return this.evolution.sendMedia(
-      tenantId,
+      connectionId,
       phone,
       file.buffer,
       file.mimetype,
@@ -109,8 +294,15 @@ export class WhatsappService {
     );
   }
 
-  async broadcast(tenantId: string, phones: string[], content: string) {
-    if (!(await this.evolution.isConnected(tenantId))) {
+  async broadcast(
+    tenantId: string,
+    connectionId: string,
+    phones: string[],
+    content: string,
+  ) {
+    await this.assertOwnership(tenantId, connectionId);
+
+    if (!(await this.evolution.isConnected(connectionId))) {
       throw new BadRequestException('WhatsApp não está conectado.');
     }
     if (phones.length > 100) {
@@ -118,7 +310,7 @@ export class WhatsappService {
         'Máximo de 100 destinatários por broadcast.',
       );
     }
-    return this.evolution.broadcast(tenantId, phones, content);
+    return this.evolution.broadcast(connectionId, phones, content);
   }
 
   // ── Media Proxy ──
@@ -133,7 +325,7 @@ export class WhatsappService {
     if (!msg || !msg.externalId) return null;
 
     return this.evolution.getMediaBase64(
-      tenantId,
+      msg.connectionId,
       msg.externalId,
       msg.remoteJid,
     );
@@ -141,7 +333,11 @@ export class WhatsappService {
 
   // ── Webhook ──
 
-  async handleWebhook(tenantId: string, body: any) {
+  async handleWebhook(
+    tenantId: string,
+    connectionId: string | null,
+    body: any,
+  ) {
     const rawEvent = body.event;
     const data = body.data;
 
@@ -152,28 +348,32 @@ export class WhatsappService {
       return;
     }
 
-    // Normalize event name: Evolution v2 may send "messages.upsert" or "MESSAGES_UPSERT"
     const event = rawEvent.toUpperCase().replace(/\./g, '_');
 
     this.logger.log(
-      `Webhook received: raw="${rawEvent}" normalized="${event}" tenant=${tenantId}`,
+      `Webhook: raw="${rawEvent}" event="${event}" tenant=${tenantId} connection=${connectionId ?? 'legacy'}`,
     );
 
-    await this.evolution.handleWebhook(tenantId, event, data);
+    await this.evolution.handleWebhook(tenantId, connectionId, event, data);
   }
 
   // ── Message History ──
 
+  /**
+   * List chats grouped by (connectionId, remotePhone).
+   * Same contact across different connections yields separate chat entries.
+   */
   async getChats(
     tenantId: string,
+    connectionId: string | undefined,
     page = 1,
     limit = 20,
     filter: 'all' | 'unread' | 'reply-later' = 'all',
   ) {
-    // Group by remotePhone to merge conversations
     const qb = this.messageRepo
       .createQueryBuilder('m')
-      .select('m."remotePhone"', 'remotePhone')
+      .select('m."connectionId"', 'connectionId')
+      .addSelect('m."remotePhone"', 'remotePhone')
       .addSelect('MAX(m."remoteJid")', 'remoteJid')
       .addSelect('MAX(m."remoteName")', 'remoteName')
       .addSelect('MAX(m."createdAt")', 'lastMessageAt')
@@ -182,15 +382,17 @@ export class WhatsappService {
         `SUM(CASE WHEN m.direction = 'INBOUND' AND m."readByUser" = false THEN 1 ELSE 0 END)::int`,
         'unreadCount',
       )
-      .addSelect(
-        `BOOL_OR(m."replyLater")`,
-        'replyLater',
-      )
+      .addSelect(`BOOL_OR(m."replyLater")`, 'replyLater')
       .where('m."tenantId" = :tenantId', { tenantId })
-      .groupBy('m."remotePhone"')
+      .groupBy('m."connectionId"')
+      .addGroupBy('m."remotePhone"')
       .orderBy('"lastMessageAt"', 'DESC')
       .offset((page - 1) * limit)
       .limit(limit + 1);
+
+    if (connectionId) {
+      qb.andWhere('m."connectionId" = :connectionId', { connectionId });
+    }
 
     if (filter === 'unread') {
       qb.having(
@@ -204,35 +406,78 @@ export class WhatsappService {
     const hasMore = chats.length > limit;
     if (hasMore) chats.pop();
 
-    // Fetch last message content for each chat
+    // Build connection metadata map (for badges in "all" mode)
+    const connIds = [...new Set(chats.map((c) => c.connectionId).filter(Boolean))];
+    const connMeta = new Map<
+      string,
+      { label: string | null; phoneNumber: string | null }
+    >();
+    if (connIds.length) {
+      const conns = await this.connectionRepo.find({
+        where: connIds.map((id) => ({ id, tenantId })),
+        select: ['id', 'label', 'phoneNumber'],
+      });
+      for (const c of conns) {
+        connMeta.set(c.id, { label: c.label, phoneNumber: c.phoneNumber });
+      }
+    }
+
+    // Fetch last message content + attach connection metadata for each chat
     for (const chat of chats) {
       const lastMsg = await this.messageRepo.findOne({
-        where: { tenantId, remotePhone: chat.remotePhone },
+        where: {
+          tenantId,
+          connectionId: chat.connectionId,
+          remotePhone: chat.remotePhone,
+        },
         order: { createdAt: 'DESC' },
         select: ['content'],
       });
       chat.lastMessage = lastMsg?.content || '';
+      const meta = connMeta.get(chat.connectionId);
+      chat.connectionLabel = meta?.label || null;
+      chat.connectionPhoneNumber = meta?.phoneNumber || null;
     }
 
     this.logger.log(
-      `getChats for tenant ${tenantId}: page=${page} found ${chats.length} chats (filter=${filter}, hasMore=${hasMore})`,
+      `getChats tenant=${tenantId} connection=${connectionId ?? 'all'} page=${page} found=${chats.length} filter=${filter}`,
     );
     return { chats, hasMore, page };
   }
 
-  async markChatRead(tenantId: string, phone: string) {
+  async markChatRead(
+    tenantId: string,
+    connectionId: string,
+    phone: string,
+  ) {
+    await this.assertOwnership(tenantId, connectionId);
     const clean = phone.replace(/\D/g, '');
     await this.messageRepo.update(
-      { tenantId, remotePhone: clean, direction: MessageDirection.INBOUND, readByUser: false },
+      {
+        tenantId,
+        connectionId,
+        remotePhone: clean,
+        direction: MessageDirection.INBOUND,
+        readByUser: false,
+      },
       { readByUser: true },
     );
   }
 
-  async markChatUnread(tenantId: string, phone: string) {
+  async markChatUnread(
+    tenantId: string,
+    connectionId: string,
+    phone: string,
+  ) {
+    await this.assertOwnership(tenantId, connectionId);
     const clean = phone.replace(/\D/g, '');
-    // Mark the last INBOUND message as unread
     const lastInbound = await this.messageRepo.findOne({
-      where: { tenantId, remotePhone: clean, direction: MessageDirection.INBOUND },
+      where: {
+        tenantId,
+        connectionId,
+        remotePhone: clean,
+        direction: MessageDirection.INBOUND,
+      },
       order: { createdAt: 'DESC' },
     });
     if (lastInbound) {
@@ -240,28 +485,37 @@ export class WhatsappService {
     }
   }
 
-  async toggleReplyLater(tenantId: string, phone: string) {
+  async toggleReplyLater(
+    tenantId: string,
+    connectionId: string,
+    phone: string,
+  ) {
+    await this.assertOwnership(tenantId, connectionId);
     const clean = phone.replace(/\D/g, '');
-    // Check current state from the latest message
     const latest = await this.messageRepo.findOne({
-      where: { tenantId, remotePhone: clean },
+      where: { tenantId, connectionId, remotePhone: clean },
       order: { createdAt: 'DESC' },
     });
     if (!latest) return { replyLater: false };
 
     const newValue = !latest.replyLater;
-    // Set replyLater on all messages for this chat (so BOOL_OR aggregation works)
     await this.messageRepo.update(
-      { tenantId, remotePhone: clean },
+      { tenantId, connectionId, remotePhone: clean },
       { replyLater: newValue },
     );
     return { replyLater: newValue };
   }
 
-  async deleteChat(tenantId: string, phone: string) {
+  async deleteChat(
+    tenantId: string,
+    connectionId: string,
+    phone: string,
+  ) {
+    await this.assertOwnership(tenantId, connectionId);
     const clean = phone.replace(/\D/g, '');
     const result = await this.messageRepo.delete({
       tenantId,
+      connectionId,
       remotePhone: clean,
     });
     return { deleted: result.affected || 0 };
@@ -269,14 +523,16 @@ export class WhatsappService {
 
   async getChatMessages(
     tenantId: string,
+    connectionId: string,
     remotePhone: string,
     page = 1,
     limit = 50,
   ) {
+    await this.assertOwnership(tenantId, connectionId);
     const clean = remotePhone.replace(/\D/g, '');
 
     const [messages, total] = await this.messageRepo.findAndCount({
-      where: { tenantId, remotePhone: clean },
+      where: { tenantId, connectionId, remotePhone: clean },
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -290,13 +546,21 @@ export class WhatsappService {
     };
   }
 
-  async searchMessages(tenantId: string, query: string, limit = 20) {
+  async searchMessages(
+    tenantId: string,
+    connectionId: string | undefined,
+    query: string,
+    limit = 20,
+  ) {
     const escaped = query.replace(/[%_]/g, '\\$&');
+    const where: any = {
+      tenantId,
+      content: ILike(`%${escaped}%`),
+    };
+    if (connectionId) where.connectionId = connectionId;
+
     return this.messageRepo.find({
-      where: {
-        tenantId,
-        content: ILike(`%${escaped}%`),
-      },
+      where,
       order: { createdAt: 'DESC' },
       take: limit,
     });
@@ -322,22 +586,39 @@ export class WhatsappService {
     return { since, until };
   }
 
-  async getAnalytics(tenantId: string, days = 30, startDate?: string, endDate?: string) {
+  async getAnalytics(
+    tenantId: string,
+    connectionId: string | undefined,
+    days = 30,
+    startDate?: string,
+    endDate?: string,
+  ) {
     const { since, until } = this.buildDateRange(days, startDate, endDate);
 
-    const qb = this.messageRepo.createQueryBuilder('m')
+    const qb = this.messageRepo
+      .createQueryBuilder('m')
       .where('m."tenantId" = :tenantId', { tenantId })
       .andWhere('m."createdAt" >= :since', { since });
 
     if (until) {
       qb.andWhere('m."createdAt" <= :until', { until });
     }
+    if (connectionId) {
+      qb.andWhere('m."connectionId" = :connectionId', { connectionId });
+    }
 
     // KPIs
-    const kpis = await qb.clone()
+    const kpis = await qb
+      .clone()
       .select(`COUNT(*)::int`, 'total')
-      .addSelect(`SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`, 'inbound')
-      .addSelect(`SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`, 'outbound')
+      .addSelect(
+        `SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`,
+        'inbound',
+      )
+      .addSelect(
+        `SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`,
+        'outbound',
+      )
       .addSelect(`COUNT(DISTINCT m."remotePhone")::int`, 'activeContacts')
       .addSelect(
         `SUM(CASE WHEN m.direction = 'INBOUND' AND m."readByUser" = false THEN 1 ELSE 0 END)::int`,
@@ -346,23 +627,37 @@ export class WhatsappService {
       .getRawOne();
 
     // Reply-later count (distinct contacts)
-    const replyLaterResult = await this.messageRepo.createQueryBuilder('m')
+    const replyLaterQb = this.messageRepo
+      .createQueryBuilder('m')
       .select('COUNT(DISTINCT m."remotePhone")::int', 'count')
       .where('m."tenantId" = :tenantId', { tenantId })
-      .andWhere('m."replyLater" = true')
-      .getRawOne();
+      .andWhere('m."replyLater" = true');
+    if (connectionId) {
+      replyLaterQb.andWhere('m."connectionId" = :connectionId', {
+        connectionId,
+      });
+    }
+    const replyLaterResult = await replyLaterQb.getRawOne();
 
     // Volume by day
-    const volumeByDay = await qb.clone()
+    const volumeByDay = await qb
+      .clone()
       .select(`DATE(m."createdAt")`, 'date')
-      .addSelect(`SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`, 'inbound')
-      .addSelect(`SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`, 'outbound')
+      .addSelect(
+        `SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`,
+        'inbound',
+      )
+      .addSelect(
+        `SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`,
+        'outbound',
+      )
       .groupBy(`DATE(m."createdAt")`)
       .orderBy(`DATE(m."createdAt")`, 'ASC')
       .getRawMany();
 
     // Peak hours
-    const peakHours = await qb.clone()
+    const peakHours = await qb
+      .clone()
       .select(`EXTRACT(HOUR FROM m."createdAt")::int`, 'hour')
       .addSelect(`COUNT(*)::int`, 'count')
       .groupBy(`EXTRACT(HOUR FROM m."createdAt")`)
@@ -370,7 +665,8 @@ export class WhatsappService {
       .getRawMany();
 
     // Message types
-    const messageTypes = await qb.clone()
+    const messageTypes = await qb
+      .clone()
       .select('m.type', 'type')
       .addSelect('COUNT(*)::int', 'count')
       .groupBy('m.type')
@@ -378,35 +674,59 @@ export class WhatsappService {
       .getRawMany();
 
     // Top 10 contacts
-    const topContacts = await qb.clone()
+    const topContacts = await qb
+      .clone()
       .select('m."remotePhone"', 'phone')
       .addSelect('MAX(m."remoteName")', 'name')
       .addSelect('COUNT(*)::int', 'total')
-      .addSelect(`SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`, 'inbound')
-      .addSelect(`SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`, 'outbound')
+      .addSelect(
+        `SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`,
+        'inbound',
+      )
+      .addSelect(
+        `SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`,
+        'outbound',
+      )
       .groupBy('m."remotePhone"')
       .orderBy('total', 'DESC')
       .limit(10)
       .getRawMany();
 
-    // Response rate: % of contacts who received at least 1 OUTBOUND among those with INBOUND
-    const responseRate = await qb.clone()
-      .select(`COUNT(DISTINCT CASE WHEN m.direction = 'INBOUND' THEN m."remotePhone" END)::int`, 'withInbound')
+    // Response rate
+    const responseRateQb = qb
+      .clone()
+      .select(
+        `COUNT(DISTINCT CASE WHEN m.direction = 'INBOUND' THEN m."remotePhone" END)::int`,
+        'withInbound',
+      )
       .addSelect(
         `COUNT(DISTINCT CASE WHEN m.direction = 'OUTBOUND' AND m."remotePhone" IN (
           SELECT DISTINCT m2."remotePhone" FROM whatsapp_messages m2
           WHERE m2."tenantId" = m."tenantId" AND m2.direction = 'INBOUND' AND m2."createdAt" >= :since
+          ${connectionId ? 'AND m2."connectionId" = :connectionId' : ''}
         ) THEN m."remotePhone" END)::int`,
         'withResponse',
-      )
-      .getRawOne();
+      );
+    const responseRate = await responseRateQb.getRawOne();
 
     // Last 10 messages
+    const recentWhere: any = { tenantId };
+    if (connectionId) recentWhere.connectionId = connectionId;
     const recentMessages = await this.messageRepo.find({
-      where: { tenantId },
+      where: recentWhere,
       order: { createdAt: 'DESC' },
       take: 10,
-      select: ['id', 'remotePhone', 'remoteName', 'content', 'type', 'direction', 'status', 'createdAt'],
+      select: [
+        'id',
+        'connectionId',
+        'remotePhone',
+        'remoteName',
+        'content',
+        'type',
+        'direction',
+        'status',
+        'createdAt',
+      ],
     });
 
     return {
@@ -417,9 +737,12 @@ export class WhatsappService {
         activeContacts: kpis?.activeContacts || 0,
         unread: kpis?.unread || 0,
         replyLater: replyLaterResult?.count || 0,
-        responseRate: kpis?.total > 0 && responseRate?.withInbound > 0
-          ? Math.round((responseRate.withResponse / responseRate.withInbound) * 100)
-          : 0,
+        responseRate:
+          kpis?.total > 0 && responseRate?.withInbound > 0
+            ? Math.round(
+                (responseRate.withResponse / responseRate.withInbound) * 100,
+              )
+            : 0,
       },
       volumeByDay,
       peakHours,
@@ -431,21 +754,27 @@ export class WhatsappService {
 
   async exportAnalyticsToExcel(
     tenantId: string,
+    connectionId: string | undefined,
     days = 30,
     startDate?: string,
     endDate?: string,
   ): Promise<Buffer> {
     const { since, until } = this.buildDateRange(days, startDate, endDate);
 
-    const qb = this.messageRepo.createQueryBuilder('m')
+    const qb = this.messageRepo
+      .createQueryBuilder('m')
       .where('m."tenantId" = :tenantId', { tenantId })
       .andWhere('m."createdAt" >= :since', { since });
 
     if (until) {
       qb.andWhere('m."createdAt" <= :until', { until });
     }
+    if (connectionId) {
+      qb.andWhere('m."connectionId" = :connectionId', { connectionId });
+    }
 
-    const messages = await qb.clone()
+    const messages = await qb
+      .clone()
       .select([
         'm.remoteName',
         'm.remotePhone',
@@ -460,16 +789,32 @@ export class WhatsappService {
 
     const wb = new ExcelJS.Workbook();
 
-    // ── Sheet 1: Mensagens ──
     const wsMsgs = wb.addWorksheet('Mensagens');
-    const msgHeaders = ['Contato', 'Telefone', 'Mensagem', 'Tipo', 'Direcao', 'Status', 'Data/Hora'];
+    const msgHeaders = [
+      'Contato',
+      'Telefone',
+      'Mensagem',
+      'Tipo',
+      'Direcao',
+      'Status',
+      'Data/Hora',
+    ];
     const msgWidths = [25, 18, 50, 12, 12, 12, 20];
-    wsMsgs.columns = msgHeaders.map((header, i) => ({ header, width: msgWidths[i] }));
+    wsMsgs.columns = msgHeaders.map((header, i) => ({
+      header,
+      width: msgWidths[i],
+    }));
 
     const directionLabel = { INBOUND: 'Recebida', OUTBOUND: 'Enviada' };
     const typeLabels: Record<string, string> = {
-      text: 'Texto', image: 'Imagem', audio: 'Audio', video: 'Video',
-      document: 'Documento', sticker: 'Sticker', location: 'Localizacao', contact: 'Contato',
+      text: 'Texto',
+      image: 'Imagem',
+      audio: 'Audio',
+      video: 'Video',
+      document: 'Documento',
+      sticker: 'Sticker',
+      location: 'Localizacao',
+      contact: 'Contato',
     };
 
     for (const msg of messages) {
@@ -484,13 +829,19 @@ export class WhatsappService {
       ]);
     }
 
-    // ── Sheet 2: Resumo por contato ──
-    const contactStats = await qb.clone()
+    const contactStats = await qb
+      .clone()
       .select('m."remotePhone"', 'phone')
       .addSelect('MAX(m."remoteName")', 'name')
       .addSelect('COUNT(*)::int', 'total')
-      .addSelect(`SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`, 'inbound')
-      .addSelect(`SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`, 'outbound')
+      .addSelect(
+        `SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`,
+        'inbound',
+      )
+      .addSelect(
+        `SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`,
+        'outbound',
+      )
       .groupBy('m."remotePhone"')
       .orderBy('total', 'DESC')
       .getRawMany();
@@ -498,17 +849,26 @@ export class WhatsappService {
     const wsContacts = wb.addWorksheet('Contatos');
     const contactHeaders = ['Contato', 'Telefone', 'Total', 'Recebidas', 'Enviadas'];
     const contactWidths = [25, 18, 10, 12, 12];
-    wsContacts.columns = contactHeaders.map((header, i) => ({ header, width: contactWidths[i] }));
+    wsContacts.columns = contactHeaders.map((header, i) => ({
+      header,
+      width: contactWidths[i],
+    }));
 
     for (const c of contactStats) {
       wsContacts.addRow([c.name || '', c.phone, c.total, c.inbound, c.outbound]);
     }
 
-    // ── Sheet 3: Volume por dia ──
-    const volumeByDay = await qb.clone()
+    const volumeByDay = await qb
+      .clone()
       .select(`DATE(m."createdAt")`, 'date')
-      .addSelect(`SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`, 'inbound')
-      .addSelect(`SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`, 'outbound')
+      .addSelect(
+        `SUM(CASE WHEN m.direction = 'INBOUND' THEN 1 ELSE 0 END)::int`,
+        'inbound',
+      )
+      .addSelect(
+        `SUM(CASE WHEN m.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int`,
+        'outbound',
+      )
       .groupBy(`DATE(m."createdAt")`)
       .orderBy(`DATE(m."createdAt")`, 'ASC')
       .getRawMany();
@@ -524,7 +884,6 @@ export class WhatsappService {
       wsVolume.addRow([v.date, v.inbound, v.outbound]);
     }
 
-    // Style headers on all sheets
     for (const ws of [wsMsgs, wsContacts, wsVolume]) {
       const headerRow = ws.getRow(1);
       headerRow.eachCell((cell) => {
@@ -540,5 +899,37 @@ export class WhatsappService {
 
     const arrayBuffer = await wb.xlsx.writeBuffer();
     return Buffer.from(arrayBuffer);
+  }
+
+  // ── Backfill: mark singleton connections as default ──
+
+  async backfillDefaultConnections() {
+    const raw = await this.connectionRepo
+      .createQueryBuilder('c')
+      .select('c."tenantId"', 'tenantId')
+      .addSelect('COUNT(*)::int', 'count')
+      .addSelect(
+        `SUM(CASE WHEN c."isDefault" = true THEN 1 ELSE 0 END)::int`,
+        'defaults',
+      )
+      .groupBy('c."tenantId"')
+      .getRawMany();
+
+    let promoted = 0;
+    for (const row of raw) {
+      if (row.count === 1 && row.defaults === 0) {
+        const conn = await this.connectionRepo.findOne({
+          where: { tenantId: row.tenantId },
+        });
+        if (conn) {
+          await this.connectionRepo.update(conn.id, { isDefault: true });
+          promoted++;
+        }
+      }
+    }
+
+    if (promoted > 0) {
+      this.logger.log(`Backfill: promoted ${promoted} connections to default`);
+    }
   }
 }

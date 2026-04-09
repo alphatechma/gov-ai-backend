@@ -23,7 +23,12 @@ import { JwtAuthGuard } from '../../core/auth/guards/jwt-auth.guard';
 import { ModuleAccessGuard } from '../../shared/guards/module-access.guard';
 import { RequiresModule } from '../../shared/decorators/requires-module.decorator';
 import { WhatsappService } from './whatsapp.service';
-import { SendMessageDto, BroadcastDto } from './dto/send-message.dto';
+import {
+  SendMessageDto,
+  BroadcastDto,
+  CreateConnectionDto,
+  UpdateConnectionDto,
+} from './dto/send-message.dto';
 
 @Controller('whatsapp')
 export class WhatsappController {
@@ -31,15 +36,92 @@ export class WhatsappController {
 
   // ── Webhook (no auth — called by Evolution API) ──
 
-  @Post('webhook/:tenantId')
+  /** New webhook with explicit connectionId. */
+  @Post('webhook/:tenantId/:connectionId')
   @HttpCode(HttpStatus.OK)
-  handleWebhook(@Param('tenantId') tenantId: string, @Body() body: any) {
-    // Fire-and-forget: don't block the Evolution API response
-    this.whatsappService.handleWebhook(tenantId, body).catch(() => {});
+  handleWebhookScoped(
+    @Param('tenantId') tenantId: string,
+    @Param('connectionId') connectionId: string,
+    @Body() body: any,
+  ) {
+    this.whatsappService
+      .handleWebhook(tenantId, connectionId, body)
+      .catch(() => {});
     return { received: true };
   }
 
-  // ── Protected endpoints ──
+  /** Legacy webhook (falls back to default connection for the tenant). */
+  @Post('webhook/:tenantId')
+  @HttpCode(HttpStatus.OK)
+  handleWebhook(@Param('tenantId') tenantId: string, @Body() body: any) {
+    this.whatsappService.handleWebhook(tenantId, null, body).catch(() => {});
+    return { received: true };
+  }
+
+  // ── Multi-instance connection endpoints ──
+
+  @Get('connections')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  listConnections(@Req() req: any) {
+    return this.whatsappService.listConnections(req.tenantId);
+  }
+
+  @Post('connections')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  createConnection(@Req() req: any, @Body() dto: CreateConnectionDto) {
+    return this.whatsappService.createConnection(
+      req.tenantId,
+      req.user.id,
+      dto.label,
+    );
+  }
+
+  @Get('connections/:id')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  getConnectionById(@Req() req: any, @Param('id') id: string) {
+    return this.whatsappService.getConnectionById(req.tenantId, id);
+  }
+
+  @Post('connections/:id/start')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  startConnectionById(@Req() req: any, @Param('id') id: string) {
+    return this.whatsappService.startConnection(
+      req.tenantId,
+      id,
+      req.user.id,
+    );
+  }
+
+  @Patch('connections/:id')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  updateConnection(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateConnectionDto,
+  ) {
+    return this.whatsappService.updateConnection(req.tenantId, id, dto);
+  }
+
+  @Post('connections/:id/disconnect')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  disconnectById(@Req() req: any, @Param('id') id: string) {
+    return this.whatsappService.disconnectConnection(req.tenantId, id);
+  }
+
+  @Delete('connections/:id')
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequiresModule('whatsapp')
+  deleteConnection(@Req() req: any, @Param('id') id: string) {
+    return this.whatsappService.deleteConnection(req.tenantId, id);
+  }
+
+  // ── Legacy singular endpoints (operate on default connection) ──
 
   @Get('connection')
   @UseGuards(JwtAuthGuard, ModuleAccessGuard)
@@ -52,14 +134,17 @@ export class WhatsappController {
   @UseGuards(JwtAuthGuard, ModuleAccessGuard)
   @RequiresModule('whatsapp')
   startConnection(@Req() req: any) {
-    return this.whatsappService.startConnection(req.tenantId, req.user.id);
+    return this.whatsappService.legacyStartConnection(
+      req.tenantId,
+      req.user.id,
+    );
   }
 
   @Delete('connection')
   @UseGuards(JwtAuthGuard, ModuleAccessGuard)
   @RequiresModule('whatsapp')
   disconnect(@Req() req: any) {
-    return this.whatsappService.disconnectConnection(req.tenantId);
+    return this.whatsappService.legacyDisconnect(req.tenantId);
   }
 
   // ── Messaging ──
@@ -70,6 +155,7 @@ export class WhatsappController {
   sendMessage(@Req() req: any, @Body() dto: SendMessageDto) {
     return this.whatsappService.sendMessage(
       req.tenantId,
+      dto.connectionId,
       dto.phone,
       dto.content,
       dto.quotedId,
@@ -79,19 +165,29 @@ export class WhatsappController {
   @Post('send-media')
   @UseGuards(JwtAuthGuard, ModuleAccessGuard)
   @RequiresModule('whatsapp')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 16 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 16 * 1024 * 1024 } }),
+  )
   sendMedia(
     @Req() req: any,
     @UploadedFile() file: Express.Multer.File,
+    @Body('connectionId') connectionId: string,
     @Body('phone') phone: string,
     @Body('caption') caption?: string,
   ) {
     if (!file) throw new BadRequestException('Arquivo é obrigatório');
     if (!phone) throw new BadRequestException('Telefone é obrigatório');
+    if (!connectionId)
+      throw new BadRequestException('connectionId é obrigatório');
     return this.whatsappService.sendMedia(
       req.tenantId,
+      connectionId,
       phone,
-      { buffer: file.buffer, mimetype: file.mimetype, originalname: file.originalname },
+      {
+        buffer: file.buffer,
+        mimetype: file.mimetype,
+        originalname: file.originalname,
+      },
       caption,
     );
   }
@@ -102,6 +198,7 @@ export class WhatsappController {
   broadcast(@Req() req: any, @Body() dto: BroadcastDto) {
     return this.whatsappService.broadcast(
       req.tenantId,
+      dto.connectionId,
       dto.phones,
       dto.content,
     );
@@ -139,12 +236,14 @@ export class WhatsappController {
   @RequiresModule('whatsapp')
   getAnalytics(
     @Req() req: any,
+    @Query('connectionId') connectionId?: string,
     @Query('days') days?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
     return this.whatsappService.getAnalytics(
       req.tenantId,
+      connectionId,
       days ? parseInt(days, 10) : 30,
       startDate,
       endDate,
@@ -157,12 +256,14 @@ export class WhatsappController {
   async exportAnalytics(
     @Req() req: any,
     @Res() res: Response,
+    @Query('connectionId') connectionId?: string,
     @Query('days') days?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
     const buffer = await this.whatsappService.exportAnalyticsToExcel(
       req.tenantId,
+      connectionId,
       days ? parseInt(days, 10) : 30,
       startDate,
       endDate,
@@ -183,6 +284,7 @@ export class WhatsappController {
   @RequiresModule('whatsapp')
   getChats(
     @Req() req: any,
+    @Query('connectionId') connectionId?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('filter') filter?: string,
@@ -193,6 +295,7 @@ export class WhatsappController {
       : 'all';
     return this.whatsappService.getChats(
       req.tenantId,
+      connectionId,
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
       f,
@@ -202,29 +305,65 @@ export class WhatsappController {
   @Delete('chats/:phone')
   @UseGuards(JwtAuthGuard, ModuleAccessGuard)
   @RequiresModule('whatsapp')
-  deleteChat(@Req() req: any, @Param('phone') phone: string) {
-    return this.whatsappService.deleteChat(req.tenantId, phone);
+  deleteChat(
+    @Req() req: any,
+    @Param('phone') phone: string,
+    @Query('connectionId') connectionId: string,
+  ) {
+    if (!connectionId)
+      throw new BadRequestException('connectionId é obrigatório');
+    return this.whatsappService.deleteChat(req.tenantId, connectionId, phone);
   }
 
   @Patch('chats/:phone/read')
   @UseGuards(JwtAuthGuard, ModuleAccessGuard)
   @RequiresModule('whatsapp')
-  markChatRead(@Req() req: any, @Param('phone') phone: string) {
-    return this.whatsappService.markChatRead(req.tenantId, phone);
+  markChatRead(
+    @Req() req: any,
+    @Param('phone') phone: string,
+    @Query('connectionId') connectionId: string,
+  ) {
+    if (!connectionId)
+      throw new BadRequestException('connectionId é obrigatório');
+    return this.whatsappService.markChatRead(
+      req.tenantId,
+      connectionId,
+      phone,
+    );
   }
 
   @Patch('chats/:phone/unread')
   @UseGuards(JwtAuthGuard, ModuleAccessGuard)
   @RequiresModule('whatsapp')
-  markChatUnread(@Req() req: any, @Param('phone') phone: string) {
-    return this.whatsappService.markChatUnread(req.tenantId, phone);
+  markChatUnread(
+    @Req() req: any,
+    @Param('phone') phone: string,
+    @Query('connectionId') connectionId: string,
+  ) {
+    if (!connectionId)
+      throw new BadRequestException('connectionId é obrigatório');
+    return this.whatsappService.markChatUnread(
+      req.tenantId,
+      connectionId,
+      phone,
+    );
   }
 
   @Patch('chats/:phone/reply-later')
   @UseGuards(JwtAuthGuard, ModuleAccessGuard)
   @RequiresModule('whatsapp')
-  toggleReplyLater(@Req() req: any, @Param('phone') phone: string) {
-    return this.whatsappService.toggleReplyLater(req.tenantId, phone);
+  toggleReplyLater(
+    @Req() req: any,
+    @Param('phone') phone: string,
+    @Query('connectionId') connectionId: string,
+  ) {
+    if (!connectionId)
+      throw new BadRequestException('connectionId é obrigatório');
+    return this.whatsappService.toggleReplyLater(
+      req.tenantId,
+      connectionId,
+      phone,
+    );
   }
 
   @Get('chats/messages')
@@ -233,11 +372,15 @@ export class WhatsappController {
   getChatMessages(
     @Req() req: any,
     @Query('phone') phone: string,
+    @Query('connectionId') connectionId: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
+    if (!connectionId)
+      throw new BadRequestException('connectionId é obrigatório');
     return this.whatsappService.getChatMessages(
       req.tenantId,
+      connectionId,
       phone,
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 50,
@@ -250,10 +393,12 @@ export class WhatsappController {
   searchMessages(
     @Req() req: any,
     @Query('q') query: string,
+    @Query('connectionId') connectionId?: string,
     @Query('limit') limit?: string,
   ) {
     return this.whatsappService.searchMessages(
       req.tenantId,
+      connectionId,
       query,
       limit ? parseInt(limit, 10) : 20,
     );

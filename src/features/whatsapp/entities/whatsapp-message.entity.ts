@@ -23,6 +23,8 @@ export enum MessageStatus {
 @Index(['tenantId', 'remoteJid'])
 @Index(['tenantId', 'remotePhone'])
 @Index(['tenantId', 'createdAt'])
+@Index(['tenantId', 'connectionId', 'createdAt'])
+@Index(['tenantId', 'connectionId', 'remotePhone'])
 export class WhatsappMessage {
   @PrimaryGeneratedColumn('uuid')
   id: string;

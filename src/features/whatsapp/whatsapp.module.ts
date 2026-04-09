@@ -31,9 +31,15 @@ import { WhatsappGateway } from './whatsapp.gateway';
   exports: [WhatsappService],
 })
 export class WhatsappModule implements OnModuleInit {
-  constructor(private evolution: WhatsappEvolutionService) {}
+  constructor(
+    private evolution: WhatsappEvolutionService,
+    private whatsappService: WhatsappService,
+  ) {}
 
   async onModuleInit() {
+    // Promote singleton connections to default (migration from 1:1 → 1:N model)
+    await this.whatsappService.backfillDefaultConnections();
+    // Rehydrate in-memory instance map from the DB
     await this.evolution.restoreConnections();
   }
 }

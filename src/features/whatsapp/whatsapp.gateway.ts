@@ -29,32 +29,49 @@ export class WhatsappGateway
     private configService: ConfigService,
     private evolution: WhatsappEvolutionService,
   ) {
-    // Forward evolution events to WebSocket clients
-    this.evolution.on('qr', ({ tenantId, qrCode }) => {
-      this.server?.to(`tenant:${tenantId}`).emit('whatsapp:qr', { qrCode });
-    });
-
-    this.evolution.on('connected', ({ tenantId, phoneNumber, pushName }) => {
+    // Forward evolution events to WebSocket clients, always including connectionId
+    this.evolution.on('qr', ({ tenantId, connectionId, qrCode }) => {
       this.server
         ?.to(`tenant:${tenantId}`)
-        .emit('whatsapp:connected', { phoneNumber, pushName });
+        .emit('whatsapp:qr', { connectionId, qrCode });
     });
 
-    this.evolution.on('disconnected', ({ tenantId, loggedOut }) => {
+    this.evolution.on(
+      'connected',
+      ({ tenantId, connectionId, phoneNumber, pushName }) => {
+        this.server
+          ?.to(`tenant:${tenantId}`)
+          .emit('whatsapp:connected', { connectionId, phoneNumber, pushName });
+      },
+    );
+
+    this.evolution.on(
+      'disconnected',
+      ({ tenantId, connectionId, loggedOut }) => {
+        this.server
+          ?.to(`tenant:${tenantId}`)
+          .emit('whatsapp:disconnected', { connectionId, loggedOut });
+      },
+    );
+
+    this.evolution.on('message', ({ tenantId, connectionId, message }) => {
       this.server
         ?.to(`tenant:${tenantId}`)
-        .emit('whatsapp:disconnected', { loggedOut });
+        .emit('whatsapp:message', { connectionId, message });
     });
 
-    this.evolution.on('message', ({ tenantId, message }) => {
-      this.server?.to(`tenant:${tenantId}`).emit('whatsapp:message', message);
-    });
-
-    this.evolution.on('message:status', ({ tenantId, externalId, status }) => {
-      this.server
-        ?.to(`tenant:${tenantId}`)
-        .emit('whatsapp:message:status', { externalId, status });
-    });
+    this.evolution.on(
+      'message:status',
+      ({ tenantId, connectionId, externalId, status }) => {
+        this.server
+          ?.to(`tenant:${tenantId}`)
+          .emit('whatsapp:message:status', {
+            connectionId,
+            externalId,
+            status,
+          });
+      },
+    );
   }
 
   async handleConnection(client: AuthenticatedSocket) {
