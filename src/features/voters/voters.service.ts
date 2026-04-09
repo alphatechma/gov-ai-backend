@@ -5,6 +5,7 @@ import { Voter } from './voter.entity';
 import { Leader } from '../leaders/leader.entity';
 import { TenantAwareService } from '../../shared/base/tenant-aware.service';
 import { GeocodingService } from '../../shared/services/geocoding.service';
+import { HelpRecordsService } from '../help-records/help-records.service';
 import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
 
@@ -18,6 +19,7 @@ export class VotersService extends TenantAwareService<Voter> {
     @InjectRepository(Leader)
     private leadersRepo: Repository<Leader>,
     private geocodingService: GeocodingService,
+    private helpRecordsService: HelpRecordsService,
   ) {
     super(votersRepo);
   }
@@ -433,6 +435,14 @@ export class VotersService extends TenantAwareService<Voter> {
       'nivel de confiança': 'confidenceLevel',
       confianca: 'confidenceLevel',
       confiança: 'confidenceLevel',
+      // Atendimento (opcional)
+      'tipo de atendimento': 'helpType',
+      'tipo de suporte': 'helpType',
+      categoria: 'helpCategory',
+      'data do atendimento': 'helpDate',
+      observacoes: 'helpObservations',
+      observações: 'helpObservations',
+      'status do atendimento': 'helpStatus',
     };
 
     // Pre-load leaders for name matching + auto-create
@@ -451,6 +461,8 @@ export class VotersService extends TenantAwareService<Voter> {
     let imported = 0;
     let skipped = 0;
     let duplicates = 0;
+    let helpRecordsCreated = 0;
+    let helpRecordsSkipped = 0;
     const errors: string[] = [];
     const batch: Record<string, any>[] = [];
     const BATCH_SIZE = 500;
@@ -500,14 +512,76 @@ export class VotersService extends TenantAwareService<Voter> {
         delete mapped.leaderName;
       }
 
-      mapped.tenantId = tenantId;
-      batch.push(mapped);
+      // Extrair campos de atendimento (opcional). Gatilho: helpType preenchido.
+      const helpType = mapped.helpType;
+      const helpPayload = helpType
+        ? {
+            type: helpType as string,
+            category: mapped.helpCategory as string | undefined,
+            date: mapped.helpDate
+              ? this.parseBirthDate(mapped.helpDate as string)
+              : undefined,
+            observations: mapped.helpObservations as string | undefined,
+            status: mapped.helpStatus as string | undefined,
+            leaderId: mapped.leaderId as string | undefined,
+          }
+        : null;
+      delete mapped.helpType;
+      delete mapped.helpCategory;
+      delete mapped.helpDate;
+      delete mapped.helpObservations;
+      delete mapped.helpStatus;
 
-      if (batch.length >= BATCH_SIZE) {
-        const result = await this.flushBatch(batch, errors);
-        imported += result.imported;
-        skipped += result.failed;
-        batch.length = 0;
+      mapped.tenantId = tenantId;
+
+      if (helpPayload) {
+        // Flush o batch pendente antes de salvar individualmente, mantendo
+        // a ordem de importacao e garantindo que o eleitor corrente obtenha ID.
+        if (batch.length > 0) {
+          const result = await this.flushBatch(batch, errors);
+          imported += result.imported;
+          skipped += result.failed;
+          batch.length = 0;
+        }
+
+        let savedVoter: Voter | null = null;
+        try {
+          const entity = this.votersRepo.create(
+            mapped as DeepPartial<Voter>,
+          );
+          savedVoter = await this.votersRepo.save(entity);
+          imported++;
+        } catch {
+          skipped++;
+          if (errors.length < 20)
+            errors.push(`Linha ${i + 2}: erro ao salvar "${mapped.name}"`);
+        }
+
+        if (savedVoter) {
+          try {
+            await this.helpRecordsService.createInlineRecord(tenantId, {
+              voterId: savedVoter.id,
+              ...helpPayload,
+            });
+            helpRecordsCreated++;
+          } catch {
+            helpRecordsSkipped++;
+            if (errors.length < 20) {
+              errors.push(
+                `Linha ${i + 2}: atendimento nao criado para "${mapped.name}"`,
+              );
+            }
+          }
+        }
+      } else {
+        batch.push(mapped);
+
+        if (batch.length >= BATCH_SIZE) {
+          const result = await this.flushBatch(batch, errors);
+          imported += result.imported;
+          skipped += result.failed;
+          batch.length = 0;
+        }
       }
     }
 
@@ -535,6 +609,8 @@ export class VotersService extends TenantAwareService<Voter> {
       imported,
       skipped,
       duplicates,
+      helpRecordsCreated,
+      helpRecordsSkipped,
       total: rows.length,
       errors: errors.slice(0, 20),
     };
@@ -655,21 +731,38 @@ export class VotersService extends TenantAwareService<Voter> {
       'CEP',
       'Titulo',
       'Lideranca',
+      // Colunas opcionais de atendimento
+      'Tipo de Atendimento',
+      'Categoria',
+      'Data do Atendimento',
+      'Observacoes',
+      'Status do Atendimento',
     ];
-    const widths = [30, 16, 18, 35, 20, 20, 8, 12, 16, 25];
+    const widths = [30, 16, 18, 35, 20, 20, 8, 12, 16, 25, 25, 20, 18, 40, 20];
+    // Indice das 5 colunas opcionais de atendimento (base 1 do ExcelJS)
+    const optionalCols = new Set([11, 12, 13, 14, 15]);
 
     ws.columns = headers.map((header, i) => ({ header, width: widths[i] }));
 
     const headerRow = ws.getRow(1);
-    headerRow.eachCell((cell) => {
+    headerRow.eachCell((cell, colNumber) => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FF4A4A4A' },
+        fgColor: {
+          argb: optionalCols.has(colNumber) ? 'FF2C5F7E' : 'FF4A4A4A',
+        },
       };
       cell.alignment = { horizontal: 'center' };
     });
+
+    // Linha de instrucao (row 2), apenas na primeira celula, explicando as opcionais
+    const noteRow = ws.getRow(2);
+    noteRow.getCell(1).value =
+      'Colunas azuis: opcionais (preencha apenas se quiser criar um atendimento junto com o eleitor)';
+    noteRow.getCell(1).font = { italic: true, color: { argb: 'FF666666' } };
+    ws.mergeCells(2, 1, 2, headers.length);
 
     const arrayBuffer = await wb.xlsx.writeBuffer();
     return Buffer.from(arrayBuffer);

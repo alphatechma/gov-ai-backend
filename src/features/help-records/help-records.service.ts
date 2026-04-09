@@ -5,7 +5,16 @@ import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
 import { HelpRecord } from './help-record.entity';
 import { HelpType } from './help-type.entity';
+import { HelpStatus } from '../../shared/enums/features';
 import { TenantAwareService } from '../../shared/base/tenant-aware.service';
+
+const HELP_STATUS_MAP: Record<string, string> = {
+  pendente: 'PENDING',
+  'em andamento': 'IN_PROGRESS',
+  concluido: 'COMPLETED',
+  concluído: 'COMPLETED',
+  cancelado: 'CANCELLED',
+};
 
 @Injectable()
 export class HelpRecordsService extends TenantAwareService<HelpRecord> {
@@ -27,6 +36,56 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
 
   async removeType(tenantId: string, id: string): Promise<void> {
     await this.typeRepo.delete({ id, tenantId });
+  }
+
+  /**
+   * Cria um HelpRecord inline (usado pelo import combinado de eleitores).
+   * Normaliza o status via HELP_STATUS_MAP e auto-cria o HelpType se necessario.
+   */
+  async createInlineRecord(
+    tenantId: string,
+    data: {
+      voterId: string;
+      type: string;
+      category?: string;
+      date?: string;
+      observations?: string;
+      status?: string;
+      leaderId?: string;
+    },
+  ): Promise<HelpRecord> {
+    const typeName = data.type.trim();
+    if (!typeName) {
+      throw new BadRequestException('Tipo de atendimento obrigatorio');
+    }
+
+    // Normalize status (defaults to PENDING)
+    let status: HelpStatus = HelpStatus.PENDING;
+    if (data.status) {
+      const normalized = HELP_STATUS_MAP[data.status.toLowerCase()];
+      if (normalized) status = normalized as HelpStatus;
+    }
+
+    // Auto-create HelpType if it does not exist for this tenant
+    const existingType = await this.typeRepo.findOne({
+      where: { tenantId, name: typeName },
+    });
+    if (!existingType) {
+      await this.typeRepo.save(this.typeRepo.create({ tenantId, name: typeName }));
+    }
+
+    const entity = this.repository.create({
+      tenantId,
+      voterId: data.voterId,
+      type: typeName,
+      category: data.category,
+      date: data.date,
+      observations: data.observations,
+      status,
+      leaderId: data.leaderId,
+    });
+
+    return this.repository.save(entity);
   }
 
   async findAllPaginated(
@@ -301,14 +360,6 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
       articulador: 'leaderName',
     };
 
-    const STATUS_MAP: Record<string, string> = {
-      pendente: 'PENDING',
-      'em andamento': 'IN_PROGRESS',
-      concluido: 'COMPLETED',
-      concluído: 'COMPLETED',
-      cancelado: 'CANCELLED',
-    };
-
     // Pre-load voters and leaders for name matching
     const voters = await this.repository.manager.query(
       `SELECT id, name, neighborhood FROM voters WHERE "tenantId" = $1`,
@@ -384,7 +435,7 @@ export class HelpRecordsService extends TenantAwareService<HelpRecord> {
 
       // Map status label to enum
       if (mapped.status) {
-        const normalized = STATUS_MAP[mapped.status.toLowerCase()];
+        const normalized = HELP_STATUS_MAP[mapped.status.toLowerCase()];
         mapped.status = normalized || 'PENDING';
       }
 
