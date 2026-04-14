@@ -590,6 +590,10 @@ export class WhatsappEvolutionService
     let messages: any[];
     if (Array.isArray(data)) {
       messages = data;
+    } else if (data?.messages && Array.isArray(data.messages)) {
+      messages = data.messages;
+    } else if (data?.message && data.message.key) {
+      messages = [data.message];
     } else if (data?.key) {
       messages = [data];
     } else {
