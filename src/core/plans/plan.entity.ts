@@ -27,6 +27,9 @@ export class Plan {
   @Column({ default: true })
   active: boolean;
 
+  @Column({ type: 'jsonb', default: [] })
+  modules: string[];
+
   @CreateDateColumn()
   createdAt: Date;
 

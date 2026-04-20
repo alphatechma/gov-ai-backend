@@ -1,4 +1,6 @@
 import {
+  IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -25,4 +27,13 @@ export class CreatePlanDto {
   @IsEnum(BillingCycle)
   @IsOptional()
   billingCycle?: BillingCycle;
+
+  @IsBoolean()
+  @IsOptional()
+  active?: boolean;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  modules?: string[];
 }
