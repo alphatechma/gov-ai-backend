@@ -13,11 +13,12 @@ async function bootstrap() {
 
   const corsOrigins = configService.get<string>('CORS_ORIGINS', '');
   app.enableCors({
-    origin: corsOrigins
-      ? corsOrigins.split(',').map((o) => o.trim())
-      : configService.get<string>('NODE_ENV') === 'production'
-        ? false
-        : true,
+    origin:
+      corsOrigins === '*'
+        ? true
+        : corsOrigins
+          ? corsOrigins.split(',').map((o) => o.trim())
+          : configService.get<string>('NODE_ENV') !== 'production',
     credentials: true,
   });
 
