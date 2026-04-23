@@ -45,3 +45,11 @@ export enum AuditAction {
   LOGIN = 'LOGIN',
   EXPORT = 'EXPORT',
 }
+
+export enum LeadFunnelStatus {
+  NOVO = 'NOVO',
+  INTERESSADO = 'INTERESSADO',
+  NEGOCIANDO = 'NEGOCIANDO',
+  FECHADO = 'FECHADO',
+  PERDIDO = 'PERDIDO',
+}
