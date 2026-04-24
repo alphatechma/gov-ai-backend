@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { LeadsService } from './leads.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
@@ -17,6 +18,8 @@ import { ListLeadsDto } from './dto/list-leads.dto';
 import { ApiKeyGuard } from '../auth/guards/api-key.guard';
 import { ApiKeyName } from '../auth/decorators/api-key-name.decorator';
 
+@ApiTags('Leads (Bot)')
+@ApiSecurity('lead-bot-key')
 @Controller('leads/bot')
 @UseGuards(ApiKeyGuard)
 @ApiKeyName('LEAD_BOT_KEY')

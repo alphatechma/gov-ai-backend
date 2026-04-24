@@ -15,10 +15,22 @@ export class Plan {
   @Column()
   name: string;
 
+  @Column({ type: 'text', nullable: true })
+  description: string | null;
+
   @Column({ type: 'int', default: 5 })
   maxUsers: number;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+    transformer: {
+      to: (value: number) => value,
+      from: (value: string | null) => (value === null ? 0 : parseFloat(value)),
+    },
+  })
   price: number;
 
   @Column({ type: 'enum', enum: BillingCycle, default: BillingCycle.MONTHLY })

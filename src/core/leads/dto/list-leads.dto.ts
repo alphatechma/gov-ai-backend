@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import { LeadFunnelStatus } from '../../../shared/enums';
 
 export class ListLeadsDto {
@@ -34,4 +34,8 @@ export class ListLeadsDto {
   @IsString()
   @IsOptional()
   source?: string;
+
+  @IsUUID()
+  @IsOptional()
+  planId?: string;
 }

@@ -20,7 +20,9 @@ export class LeadsService {
     const page = query.page && query.page > 0 ? query.page : 1;
     const limit = query.limit && query.limit > 0 ? Math.min(query.limit, 200) : 50;
 
-    const qb = this.leadsRepo.createQueryBuilder('lead');
+    const qb = this.leadsRepo
+      .createQueryBuilder('lead')
+      .leftJoinAndSelect('lead.plan', 'plan');
 
     if (query.name) {
       qb.andWhere('lead.name ILIKE :name', { name: `%${query.name}%` });
@@ -38,6 +40,9 @@ export class LeadsService {
     }
     if (query.source) {
       qb.andWhere('lead.source = :source', { source: query.source });
+    }
+    if (query.planId) {
+      qb.andWhere('lead.planId = :planId', { planId: query.planId });
     }
 
     qb.andWhere((sub) => {
@@ -58,7 +63,10 @@ export class LeadsService {
   }
 
   async findOne(id: string) {
-    const lead = await this.leadsRepo.findOne({ where: { id } });
+    const lead = await this.leadsRepo.findOne({
+      where: { id },
+      relations: ['plan'],
+    });
     if (!lead) throw new NotFoundException('Lead não encontrado');
     return lead;
   }

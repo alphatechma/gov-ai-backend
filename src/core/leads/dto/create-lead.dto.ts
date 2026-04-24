@@ -6,6 +6,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
 } from 'class-validator';
 import { LeadFunnelStatus } from '../../../shared/enums';
@@ -46,4 +47,8 @@ export class CreateLeadDto {
   @Min(0)
   @IsOptional()
   contactAttempts?: number;
+
+  @IsUUID()
+  @IsOptional()
+  planId?: string | null;
 }
