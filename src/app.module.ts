@@ -2,6 +2,7 @@ import { Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { getDatabaseConfig } from './config/database.config';
 import { runSeed } from './config/seed';
@@ -18,6 +19,7 @@ import { ModulesModule } from './core/modules/modules.module';
 import { AuditLogModule } from './core/audit-log/audit-log.module';
 import { LeadsModule } from './core/leads/leads.module';
 import { SubscribersModule } from './core/subscribers/subscribers.module';
+import { CheckoutModule } from './core/checkout/checkout.module';
 
 // Features
 import { VotersModule } from './features/voters/voters.module';
@@ -58,6 +60,8 @@ import { BroadcastsModule } from './features/broadcasts/broadcasts.module';
       { name: 'long', ttl: 60000, limit: 100 },
     ]),
 
+    ScheduleModule.forRoot(),
+
     // Shared
     StorageModule,
 
@@ -70,6 +74,7 @@ import { BroadcastsModule } from './features/broadcasts/broadcasts.module';
     AuditLogModule,
     LeadsModule,
     SubscribersModule,
+    CheckoutModule,
 
     // Features
     VotersModule,

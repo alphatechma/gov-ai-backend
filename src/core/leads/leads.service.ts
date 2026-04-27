@@ -72,7 +72,12 @@ export class LeadsService {
   }
 
   create(dto: CreateLeadDto) {
-    const lead = this.leadsRepo.create(dto as Partial<Lead>);
+    const now = new Date();
+    const lead = this.leadsRepo.create({
+      ...(dto as Partial<Lead>),
+      lastInteraction: now,
+      nextInteraction: new Date(now.getTime() + 15 * 60 * 1000),
+    });
     return this.leadsRepo.save(lead);
   }
 

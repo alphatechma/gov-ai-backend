@@ -6,6 +6,7 @@ import { Strategy, ExtractJwt } from 'passport-jwt';
 import { Request } from 'express';
 import { Repository } from 'typeorm';
 import { User } from '../../users/user.entity';
+import { Subscriber } from '../../subscribers/subscriber.entity';
 
 @Injectable()
 export class JwtRefreshStrategy extends PassportStrategy(
@@ -16,6 +17,8 @@ export class JwtRefreshStrategy extends PassportStrategy(
     configService: ConfigService,
     @InjectRepository(User)
     private usersRepo: Repository<User>,
+    @InjectRepository(Subscriber)
+    private subscribersRepo: Repository<Subscriber>,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromBodyField('refreshToken'),
@@ -43,6 +46,21 @@ export class JwtRefreshStrategy extends PassportStrategy(
       payload.iat * 1000 < user.sessionsValidAfter.getTime()
     ) {
       throw new UnauthorizedException('Sessão revogada, faça login novamente');
+    }
+
+    if (user.tenantId) {
+      const sub = await this.subscribersRepo
+        .createQueryBuilder('s')
+        .innerJoin('s.user', 'u')
+        .where('u.tenantId = :tenantId', { tenantId: user.tenantId })
+        .andWhere('s.active = true')
+        .getOne();
+      if (!sub) {
+        throw new UnauthorizedException({
+          message: 'Sua assinatura expirou.',
+          code: 'SUBSCRIPTION_EXPIRED',
+        });
+      }
     }
 
     return {

@@ -53,3 +53,16 @@ export enum LeadFunnelStatus {
   FECHADO = 'FECHADO',
   PERDIDO = 'PERDIDO',
 }
+
+export enum CheckoutStatus {
+  PENDING = 'PENDING',
+  PAID = 'PAID',
+  FAILED = 'FAILED',
+  CANCELLED = 'CANCELLED',
+  EXPIRED = 'EXPIRED',
+}
+
+export enum MpResourceType {
+  PREFERENCE = 'PREFERENCE',
+  PREAPPROVAL = 'PREAPPROVAL',
+}

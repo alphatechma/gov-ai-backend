@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Repository } from 'typeorm';
 import { User } from '../../users/user.entity';
+import { Subscriber } from '../../subscribers/subscriber.entity';
 
 interface JwtPayload {
   sub: string;
@@ -20,6 +21,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     configService: ConfigService,
     @InjectRepository(User)
     private usersRepo: Repository<User>,
+    @InjectRepository(Subscriber)
+    private subscribersRepo: Repository<Subscriber>,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -44,6 +47,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       payload.iat * 1000 < user.sessionsValidAfter.getTime()
     ) {
       throw new UnauthorizedException('Sessão revogada, faça login novamente');
+    }
+
+    if (user.tenantId) {
+      const sub = await this.subscribersRepo
+        .createQueryBuilder('s')
+        .innerJoin('s.user', 'u')
+        .where('u.tenantId = :tenantId', { tenantId: user.tenantId })
+        .andWhere('s.active = true')
+        .getOne();
+      if (!sub) {
+        throw new UnauthorizedException({
+          message: 'Sua assinatura expirou.',
+          code: 'SUBSCRIPTION_EXPIRED',
+        });
+      }
     }
 
     return {

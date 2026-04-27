@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ConflictException,
   BadRequestException,
@@ -11,6 +12,7 @@ import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { TenantModule } from '../modules/tenant-module.entity';
 import { SystemModule } from '../modules/system-module.entity';
+import { Plan } from '../plans/plan.entity';
 
 /**
  * Maps each module key to the database tables that should be cleared.
@@ -37,6 +39,8 @@ const MODULE_TABLES: Record<string, string[]> = {
 
 @Injectable()
 export class TenantsService {
+  private readonly logger = new Logger(TenantsService.name);
+
   constructor(
     @InjectRepository(Tenant)
     private tenantsRepo: Repository<Tenant>,
@@ -44,6 +48,8 @@ export class TenantsService {
     private tenantModuleRepo: Repository<TenantModule>,
     @InjectRepository(SystemModule)
     private systemModuleRepo: Repository<SystemModule>,
+    @InjectRepository(Plan)
+    private plansRepo: Repository<Plan>,
     private dataSource: DataSource,
   ) {}
 
@@ -162,5 +168,80 @@ export class TenantsService {
     );
 
     await this.tenantModuleRepo.save(tenantModules);
+  }
+
+  async activatePlanModules(tenantId: string, planId: string): Promise<void> {
+    const plan = await this.plansRepo.findOne({ where: { id: planId } });
+    const rawModules = Array.isArray(plan?.modules)
+      ? plan!.modules
+      : typeof plan?.modules === 'string'
+        ? this.parseJsonArray(plan.modules)
+        : [];
+
+    if (!plan || rawModules.length === 0) {
+      this.logger.warn(
+        `activatePlanModules: plano ${planId} sem módulos para ativar`,
+      );
+      return;
+    }
+
+    const allModules = await this.systemModuleRepo.find();
+    const byKey = new Set(allModules.map((m) => m.key));
+    const byName = new Map(allModules.map((m) => [m.name, m.key]));
+
+    const resolvedKeys: string[] = [];
+    const unknown: string[] = [];
+
+    for (const entry of rawModules) {
+      if (typeof entry !== 'string' || !entry.trim()) continue;
+      const value = entry.trim();
+      if (byKey.has(value)) {
+        resolvedKeys.push(value);
+      } else if (byName.has(value)) {
+        resolvedKeys.push(byName.get(value)!);
+      } else {
+        unknown.push(value);
+      }
+    }
+
+    if (unknown.length) {
+      this.logger.warn(
+        `activatePlanModules: plano ${planId} referencia módulos desconhecidos (ignorados): ${unknown.join(', ')}`,
+      );
+    }
+
+    if (resolvedKeys.length === 0) {
+      this.logger.warn(
+        `activatePlanModules: plano ${planId} não tem nenhum módulo válido após normalização`,
+      );
+      return;
+    }
+
+    await this.tenantModuleRepo
+      .createQueryBuilder()
+      .insert()
+      .into(TenantModule)
+      .values(
+        resolvedKeys.map((moduleKey) => ({
+          tenantId,
+          moduleKey,
+          enabled: true,
+        })),
+      )
+      .orIgnore()
+      .execute();
+
+    this.logger.log(
+      `activatePlanModules: tenant ${tenantId} ganhou ${resolvedKeys.length} módulo(s) do plano: ${resolvedKeys.join(', ')}`,
+    );
+  }
+
+  private parseJsonArray(value: string): unknown[] {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   }
 }

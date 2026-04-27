@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -9,12 +10,18 @@ import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity
 import { Subscriber } from './subscriber.entity';
 import { Lead } from '../leads/lead.entity';
 import { Plan } from '../plans/plan.entity';
+import { CheckoutSession } from '../checkout/entities/checkout-session.entity';
+import { SubscriptionPayment } from '../checkout/entities/subscription-payment.entity';
+import { MercadoPagoService } from '../checkout/services/mercado-pago.service';
+import { BillingCycle, CheckoutStatus } from '../../shared/enums';
 import { CreateSubscriberDto } from './dto/create-subscriber.dto';
 import { UpdateSubscriberDto } from './dto/update-subscriber.dto';
 import { ListSubscribersDto } from './dto/list-subscribers.dto';
 
 @Injectable()
 export class SubscribersService {
+  private readonly logger = new Logger(SubscribersService.name);
+
   constructor(
     @InjectRepository(Subscriber)
     private subscribersRepo: Repository<Subscriber>,
@@ -22,7 +29,114 @@ export class SubscribersService {
     private leadsRepo: Repository<Lead>,
     @InjectRepository(Plan)
     private plansRepo: Repository<Plan>,
+    @InjectRepository(CheckoutSession)
+    private sessionsRepo: Repository<CheckoutSession>,
+    @InjectRepository(SubscriptionPayment)
+    private paymentsRepo: Repository<SubscriptionPayment>,
+    private mercadoPago: MercadoPagoService,
   ) {}
+
+  async findActiveByUser(userId: string): Promise<Subscriber | null> {
+    return this.subscribersRepo.findOne({
+      where: { userId, active: true },
+      relations: ['plan', 'checkoutSession'],
+    });
+  }
+
+  private async findActiveByTenant(tenantId: string): Promise<Subscriber | null> {
+    return this.subscribersRepo
+      .createQueryBuilder('subscriber')
+      .leftJoinAndSelect('subscriber.plan', 'plan')
+      .leftJoinAndSelect('subscriber.checkoutSession', 'checkoutSession')
+      .innerJoin('subscriber.user', 'user')
+      .where('user.tenantId = :tenantId', { tenantId })
+      .andWhere('subscriber.active = true')
+      .orderBy('subscriber.createdAt', 'DESC')
+      .getOne();
+  }
+
+  async findActiveForContext(
+    userId: string,
+    tenantId?: string | null,
+  ): Promise<Subscriber | null> {
+    if (tenantId) {
+      const tenantSubscription = await this.findActiveByTenant(tenantId);
+      if (tenantSubscription) return tenantSubscription;
+    }
+    return this.findActiveByUser(userId);
+  }
+
+  async isTenantSubscriptionActive(tenantId: string): Promise<boolean> {
+    if (!tenantId) return false;
+    const sub = await this.subscribersRepo
+      .createQueryBuilder('s')
+      .innerJoin('s.user', 'u')
+      .where('u.tenantId = :tenantId', { tenantId })
+      .andWhere('s.active = true')
+      .getOne();
+    return !!sub;
+  }
+
+  async cancelByContext(
+    userId: string,
+    tenantId?: string | null,
+  ): Promise<{ cancelledAt: Date; refundedPayments: number; inTrial: boolean }> {
+    const subscriber = await this.findActiveForContext(userId, tenantId);
+    if (!subscriber) {
+      throw new NotFoundException('Assinatura ativa não encontrada');
+    }
+
+    const now = new Date();
+    const inTrial =
+      !!subscriber.trialEndsAt && subscriber.trialEndsAt > now;
+    const cycle = subscriber.plan?.billingCycle;
+    const session = subscriber.checkoutSession;
+
+    if (cycle !== BillingCycle.MONTHLY && !inTrial) {
+      throw new BadRequestException(
+        'Plano anual só pode ser cancelado durante o período de teste de 7 dias',
+      );
+    }
+
+    if (cycle === BillingCycle.MONTHLY) {
+      if (!session?.mpResourceId) {
+        throw new BadRequestException(
+          'Assinatura sem identificador no Mercado Pago',
+        );
+      }
+      await this.mercadoPago.cancelPreapproval(session.mpResourceId);
+    }
+
+    let refundedPayments = 0;
+    if (inTrial && session) {
+      const payments = await this.paymentsRepo.find({
+        where: { checkoutSessionId: session.id, mpStatus: 'approved' },
+      });
+      for (const p of payments) {
+        try {
+          await this.mercadoPago.refundPayment(p.mpPaymentId);
+          refundedPayments++;
+        } catch (err) {
+          this.logger.error(
+            `Falha ao estornar pagamento ${p.mpPaymentId} (subscriber ${subscriber.id}): ${(err as Error).message}`,
+          );
+        }
+      }
+    }
+
+    subscriber.active = false;
+    subscriber.endDate = now;
+    await this.subscribersRepo.save(subscriber);
+
+    if (session && session.status !== CheckoutStatus.CANCELLED) {
+      session.status = CheckoutStatus.CANCELLED;
+      session.cancelledAt = now;
+      session.mpStatus = 'cancelled';
+      await this.sessionsRepo.save(session);
+    }
+
+    return { cancelledAt: now, refundedPayments, inTrial };
+  }
 
   async findAll(query: ListSubscribersDto) {
     const page = query.page && query.page > 0 ? query.page : 1;

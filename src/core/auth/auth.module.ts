@@ -12,6 +12,7 @@ import { ApiKeyGuard } from './guards/api-key.guard';
 import { JwtOrApiKeyGuard } from './guards/jwt-or-api-key.guard';
 import { User } from '../users/user.entity';
 import { TenantModule } from '../modules/tenant-module.entity';
+import { Subscriber } from '../subscribers/subscriber.entity';
 
 @Module({
   imports: [
@@ -26,7 +27,7 @@ import { TenantModule } from '../modules/tenant-module.entity';
         },
       }),
     }),
-    TypeOrmModule.forFeature([User, TenantModule]),
+    TypeOrmModule.forFeature([User, TenantModule, Subscriber]),
   ],
   controllers: [AuthController],
   providers: [
