@@ -266,18 +266,18 @@ export class VotersService extends TenantAwareService<Voter> {
   /**
    * Carrega índice de eleitores existentes (nome + telefone) do tenant.
    */
-  private async buildDuplicateIndex(tenantId: string): Promise<Set<string>> {
-    const existing: { name: string; phone: string }[] = await this.votersRepo
+  private async buildDuplicateIndex(tenantId: string): Promise<Map<string, string>> {
+    const existing: { id: string; name: string; phone: string }[] = await this.votersRepo
       .createQueryBuilder('v')
-      .select(['v.name', 'v.phone'])
+      .select(['v.id', 'v.name', 'v.phone'])
       .where('v.tenantId = :tenantId', { tenantId })
       .andWhere('v.phone IS NOT NULL')
       .andWhere("v.phone != ''")
       .getMany();
 
-    const index = new Set<string>();
+    const index = new Map<string, string>();
     for (const v of existing) {
-      index.add(this.buildDuplicateKey(v.name, v.phone));
+      index.set(this.buildDuplicateKey(v.name, v.phone), v.id);
     }
     return index;
   }
@@ -476,21 +476,6 @@ export class VotersService extends TenantAwareService<Voter> {
         continue;
       }
 
-      // Verificar duplicidade por nome + telefone
-      if (mapped.phone) {
-        const dupKey = this.buildDuplicateKey(mapped.name, mapped.phone);
-        if (duplicateIndex.has(dupKey)) {
-          duplicates++;
-          if (errors.length < 20)
-            errors.push(
-              `Linha ${i + 2}: eleitor "${mapped.name}" já cadastrado (nome + telefone)`,
-            );
-          continue;
-        }
-        // Adicionar ao índice para detectar duplicatas dentro do próprio arquivo
-        duplicateIndex.add(dupKey);
-      }
-
       if (mapped.birthDate) {
         mapped.birthDate = this.parseBirthDate(mapped.birthDate);
       }
@@ -534,6 +519,60 @@ export class VotersService extends TenantAwareService<Voter> {
 
       mapped.tenantId = tenantId;
 
+      // Verificar duplicidade por nome + telefone
+      if (mapped.phone) {
+        const dupKey = this.buildDuplicateKey(mapped.name, mapped.phone);
+        const existingVoterId = duplicateIndex.get(dupKey);
+        
+        if (existingVoterId !== undefined) {
+          duplicates++;
+          
+          if (helpPayload) {
+            let targetVoterId = existingVoterId;
+            
+            // Se o eleitor for recém inserido neste mesmo arquivo no lote (ainda sem ID real)
+            if (targetVoterId === 'PENDING_IN_BATCH') {
+              if (batch.length > 0) {
+                const result = await this.flushBatch(batch, errors);
+                imported += result.imported;
+                skipped += result.failed;
+                batch.length = 0;
+              }
+              const newlySaved = await this.votersRepo.findOne({
+                where: { tenantId, name: mapped.name, phone: mapped.phone }
+              });
+              if (newlySaved) {
+                targetVoterId = newlySaved.id;
+                duplicateIndex.set(dupKey, targetVoterId);
+              }
+            }
+
+            if (targetVoterId !== 'PENDING_IN_BATCH') {
+              try {
+                await this.helpRecordsService.createInlineRecord(tenantId, {
+                  voterId: targetVoterId,
+                  ...helpPayload,
+                });
+                helpRecordsCreated++;
+              } catch {
+                helpRecordsSkipped++;
+                if (errors.length < 20) {
+                  errors.push(`Linha ${i + 2}: erro ao criar atendimento para "${mapped.name}" (existente)`);
+                }
+              }
+            }
+          } else {
+            if (errors.length < 20)
+              errors.push(
+                `Linha ${i + 2}: eleitor "${mapped.name}" já cadastrado (nome + telefone)`,
+              );
+          }
+          continue;
+        }
+        // Adicionar ao índice para detectar duplicatas dentro do próprio arquivo
+        duplicateIndex.set(dupKey, 'PENDING_IN_BATCH');
+      }
+
       if (helpPayload) {
         // Flush o batch pendente antes de salvar individualmente, mantendo
         // a ordem de importacao e garantindo que o eleitor corrente obtenha ID.
@@ -551,6 +590,11 @@ export class VotersService extends TenantAwareService<Voter> {
           );
           savedVoter = await this.votersRepo.save(entity);
           imported++;
+          // Atualiza o índice com o ID real
+          if (mapped.phone) {
+            const dupKey = this.buildDuplicateKey(mapped.name, mapped.phone);
+            duplicateIndex.set(dupKey, savedVoter.id);
+          }
         } catch {
           skipped++;
           if (errors.length < 20)
