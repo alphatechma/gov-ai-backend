@@ -12,6 +12,10 @@ export class CreateSubscriberDto {
   @IsUUID()
   planId: string;
 
+  @IsUUID()
+  @IsOptional()
+  userId?: string | null;
+
   @IsBoolean()
   @IsOptional()
   active?: boolean;

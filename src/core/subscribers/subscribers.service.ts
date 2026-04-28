@@ -10,6 +10,7 @@ import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity
 import { Subscriber } from './subscriber.entity';
 import { Lead } from '../leads/lead.entity';
 import { Plan } from '../plans/plan.entity';
+import { User } from '../users/user.entity';
 import { CheckoutSession } from '../checkout/entities/checkout-session.entity';
 import { SubscriptionPayment } from '../checkout/entities/subscription-payment.entity';
 import { MercadoPagoService } from '../checkout/services/mercado-pago.service';
@@ -29,6 +30,8 @@ export class SubscribersService {
     private leadsRepo: Repository<Lead>,
     @InjectRepository(Plan)
     private plansRepo: Repository<Plan>,
+    @InjectRepository(User)
+    private usersRepo: Repository<User>,
     @InjectRepository(CheckoutSession)
     private sessionsRepo: Repository<CheckoutSession>,
     @InjectRepository(SubscriptionPayment)
@@ -181,7 +184,7 @@ export class SubscribersService {
   async findOne(id: string) {
     const subscriber = await this.subscribersRepo.findOne({
       where: { id },
-      relations: ['lead', 'plan'],
+      relations: ['lead', 'plan', 'user'],
     });
     if (!subscriber) throw new NotFoundException('Assinante não encontrado');
     return subscriber;
@@ -194,6 +197,19 @@ export class SubscribersService {
     const plan = await this.plansRepo.findOne({ where: { id: dto.planId } });
     if (!plan) throw new BadRequestException('Plano não encontrado');
 
+    if (dto.userId) {
+      const user = await this.usersRepo.findOne({ where: { id: dto.userId } });
+      if (!user) throw new BadRequestException('Usuário não encontrado');
+      const existing = await this.subscribersRepo.findOne({
+        where: { userId: dto.userId },
+      });
+      if (existing) {
+        throw new BadRequestException(
+          'Este usuário já está vinculado a outro assinante',
+        );
+      }
+    }
+
     if (dto.endDate && new Date(dto.endDate) <= new Date(dto.startDate)) {
       throw new BadRequestException(
         'Data de fim deve ser posterior à data de início',
@@ -203,6 +219,7 @@ export class SubscribersService {
     const subscriber = this.subscribersRepo.create({
       leadId: dto.leadId,
       planId: dto.planId,
+      userId: dto.userId ?? null,
       active: dto.active ?? true,
       startDate: new Date(dto.startDate),
       endDate: dto.endDate ? new Date(dto.endDate) : null,
@@ -221,6 +238,22 @@ export class SubscribersService {
     if (dto.planId && dto.planId !== subscriber.planId) {
       const plan = await this.plansRepo.findOne({ where: { id: dto.planId } });
       if (!plan) throw new BadRequestException('Plano não encontrado');
+    }
+    if (dto.userId !== undefined && dto.userId !== subscriber.userId) {
+      if (dto.userId) {
+        const user = await this.usersRepo.findOne({
+          where: { id: dto.userId },
+        });
+        if (!user) throw new BadRequestException('Usuário não encontrado');
+        const existing = await this.subscribersRepo.findOne({
+          where: { userId: dto.userId },
+        });
+        if (existing && existing.id !== id) {
+          throw new BadRequestException(
+            'Este usuário já está vinculado a outro assinante',
+          );
+        }
+      }
     }
 
     const nextStart = dto.startDate
@@ -242,6 +275,7 @@ export class SubscribersService {
     const patch: QueryDeepPartialEntity<Subscriber> = {};
     if (dto.leadId !== undefined) patch.leadId = dto.leadId;
     if (dto.planId !== undefined) patch.planId = dto.planId;
+    if (dto.userId !== undefined) patch.userId = dto.userId ?? null;
     if (dto.active !== undefined) patch.active = dto.active;
     if (dto.startDate !== undefined) patch.startDate = nextStart;
     if (dto.endDate !== undefined) patch.endDate = nextEnd;
