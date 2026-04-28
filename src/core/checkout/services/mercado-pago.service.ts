@@ -104,6 +104,12 @@ export class MercadoPagoService {
           name: params.payer.name,
           email: params.payer.email,
         },
+        payment_methods: {
+          excluded_payment_types: [],
+          excluded_payment_methods: [],
+          installments: 1,
+          default_payment_method_id: 'pix',
+        },
         back_urls: params.backUrls,
         auto_return: 'approved',
         external_reference: params.sessionId,
