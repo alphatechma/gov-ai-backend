@@ -7,9 +7,12 @@ import { TenantBrandingService } from './tenant-branding.service';
 import { Tenant } from './tenant.entity';
 import { TenantModule } from '../modules/tenant-module.entity';
 import { SystemModule } from '../modules/system-module.entity';
+import { Plan } from '../plans/plan.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Tenant, TenantModule, SystemModule])],
+  imports: [
+    TypeOrmModule.forFeature([Tenant, TenantModule, SystemModule, Plan]),
+  ],
   controllers: [TenantsController, TenantBrandingController],
   providers: [TenantsService, TenantBrandingService],
   exports: [TenantsService],

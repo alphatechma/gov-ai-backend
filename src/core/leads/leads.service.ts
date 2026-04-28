@@ -20,7 +20,9 @@ export class LeadsService {
     const page = query.page && query.page > 0 ? query.page : 1;
     const limit = query.limit && query.limit > 0 ? Math.min(query.limit, 200) : 50;
 
-    const qb = this.leadsRepo.createQueryBuilder('lead');
+    const qb = this.leadsRepo
+      .createQueryBuilder('lead')
+      .leftJoinAndSelect('lead.plan', 'plan');
 
     if (query.name) {
       qb.andWhere('lead.name ILIKE :name', { name: `%${query.name}%` });
@@ -38,6 +40,9 @@ export class LeadsService {
     }
     if (query.source) {
       qb.andWhere('lead.source = :source', { source: query.source });
+    }
+    if (query.planId) {
+      qb.andWhere('lead.planId = :planId', { planId: query.planId });
     }
 
     qb.andWhere((sub) => {
@@ -58,14 +63,44 @@ export class LeadsService {
   }
 
   async findOne(id: string) {
-    const lead = await this.leadsRepo.findOne({ where: { id } });
+    const lead = await this.leadsRepo.findOne({
+      where: { id },
+      relations: ['plan'],
+    });
     if (!lead) throw new NotFoundException('Lead não encontrado');
     return lead;
   }
 
   create(dto: CreateLeadDto) {
-    const lead = this.leadsRepo.create(dto as Partial<Lead>);
+    const now = new Date();
+    const lead = this.leadsRepo.create({
+      ...(dto as Partial<Lead>),
+      lastInteraction: now,
+      nextInteraction: new Date(now.getTime() + 15 * 60 * 1000),
+    });
     return this.leadsRepo.save(lead);
+  }
+
+  async upsertByEmail(dto: CreateLeadDto): Promise<Lead> {
+    const normalizedEmail = dto.email.trim().toLowerCase();
+    const existing = await this.leadsRepo.findOne({
+      where: { email: normalizedEmail },
+    });
+    const now = new Date();
+
+    if (!existing) {
+      return this.create({ ...dto, email: normalizedEmail });
+    }
+
+    existing.name = dto.name ?? existing.name;
+    existing.phone = dto.phone ?? existing.phone;
+    if (dto.source !== undefined) existing.source = dto.source;
+    if (dto.notes !== undefined) existing.notes = dto.notes;
+    if (dto.funnelStatus !== undefined) existing.funnelStatus = dto.funnelStatus;
+    if (dto.planId !== undefined) existing.planId = dto.planId;
+    existing.lastInteraction = now;
+    existing.nextInteraction = new Date(now.getTime() + 15 * 60 * 1000);
+    return this.leadsRepo.save(existing);
   }
 
   async update(id: string, dto: UpdateLeadDto) {

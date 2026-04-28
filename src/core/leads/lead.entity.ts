@@ -4,8 +4,11 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { LeadFunnelStatus } from '../../shared/enums';
+import { Plan } from '../plans/plan.entity';
 
 @Entity('leads')
 export class Lead {
@@ -42,6 +45,13 @@ export class Lead {
 
   @Column({ type: 'int', default: 0 })
   contactAttempts: number;
+
+  @Column({ type: 'uuid', nullable: true })
+  planId: string | null;
+
+  @ManyToOne(() => Plan, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'planId' })
+  plan: Plan | null;
 
   @CreateDateColumn()
   createdAt: Date;

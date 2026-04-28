@@ -15,6 +15,7 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { TenantModule } from '../modules/tenant-module.entity';
+import { Subscriber } from '../subscribers/subscriber.entity';
 
 @Injectable()
 export class AuthService {
@@ -23,9 +24,28 @@ export class AuthService {
     private usersRepo: Repository<User>,
     @InjectRepository(TenantModule)
     private tenantModuleRepo: Repository<TenantModule>,
+    @InjectRepository(Subscriber)
+    private subscribersRepo: Repository<Subscriber>,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {}
+
+  private async ensureActiveSubscription(tenantId: string | null): Promise<void> {
+    if (!tenantId) return;
+    const sub = await this.subscribersRepo
+      .createQueryBuilder('s')
+      .innerJoin('s.user', 'u')
+      .where('u.tenantId = :tenantId', { tenantId })
+      .andWhere('s.active = true')
+      .getOne();
+    if (!sub) {
+      throw new UnauthorizedException({
+        message:
+          'Sua assinatura expirou. Regularize o pagamento para continuar.',
+        code: 'SUBSCRIPTION_EXPIRED',
+      });
+    }
+  }
 
   async login(dto: LoginDto) {
     const user = await this.usersRepo.findOne({
@@ -45,6 +65,8 @@ export class AuthService {
     if (!user.active) {
       throw new UnauthorizedException('Usuário desativado');
     }
+
+    await this.ensureActiveSubscription(user.tenantId);
 
     user.lastLoginAt = new Date();
     await this.usersRepo.save(user);
@@ -127,6 +149,8 @@ export class AuthService {
     if (!user || !user.active) {
       throw new UnauthorizedException('Usuário inativo ou não encontrado');
     }
+
+    await this.ensureActiveSubscription(user.tenantId);
 
     let enabledModules = user.tenantId
       ? await this.getEnabledModules(user.tenantId)

@@ -2,12 +2,15 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { useContainer } from 'class-validator';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './shared/filters/http-exception.filter';
 import { TenantInterceptor } from './shared/interceptors/tenant.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  useContainer(app.select(AppModule), { fallbackOnErrors: true });
 
   const configService = app.get(ConfigService);
 
@@ -41,6 +44,14 @@ async function bootstrap() {
       .setDescription('API da plataforma GoverneAI')
       .setVersion('1.0')
       .addBearerAuth()
+      .addApiKey(
+        { type: 'apiKey', name: 'x-api-key', in: 'header' },
+        'governe-ai-key',
+      )
+      .addApiKey(
+        { type: 'apiKey', name: 'x-api-key', in: 'header' },
+        'lead-bot-key',
+      )
       .build();
 
     const document = SwaggerModule.createDocument(app, swaggerConfig);

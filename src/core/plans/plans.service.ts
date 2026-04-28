@@ -16,6 +16,13 @@ export class PlansService {
     return this.plansRepo.find({ order: { price: 'ASC' } });
   }
 
+  findAllActive() {
+    return this.plansRepo.find({
+      where: { active: true },
+      order: { price: 'ASC' },
+    });
+  }
+
   async findOne(id: string) {
     const plan = await this.plansRepo.findOne({ where: { id } });
     if (!plan) throw new NotFoundException('Plano não encontrado');

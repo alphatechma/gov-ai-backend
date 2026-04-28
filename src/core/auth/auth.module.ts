@@ -7,8 +7,12 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { ApiKeyGuard } from './guards/api-key.guard';
+import { JwtOrApiKeyGuard } from './guards/jwt-or-api-key.guard';
 import { User } from '../users/user.entity';
 import { TenantModule } from '../modules/tenant-module.entity';
+import { Subscriber } from '../subscribers/subscriber.entity';
 
 @Module({
   imports: [
@@ -23,10 +27,25 @@ import { TenantModule } from '../modules/tenant-module.entity';
         },
       }),
     }),
-    TypeOrmModule.forFeature([User, TenantModule]),
+    TypeOrmModule.forFeature([User, TenantModule, Subscriber]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtRefreshStrategy],
-  exports: [AuthService, JwtStrategy, JwtRefreshStrategy, PassportModule],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    JwtRefreshStrategy,
+    JwtAuthGuard,
+    ApiKeyGuard,
+    JwtOrApiKeyGuard,
+  ],
+  exports: [
+    AuthService,
+    JwtStrategy,
+    JwtRefreshStrategy,
+    PassportModule,
+    JwtAuthGuard,
+    ApiKeyGuard,
+    JwtOrApiKeyGuard,
+  ],
 })
 export class AuthModule {}
