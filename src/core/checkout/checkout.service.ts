@@ -39,7 +39,7 @@ export class CheckoutService {
       throw new BadRequestException('Plano indisponível para contratação');
     }
 
-    const lead = await this.leadsService.create({
+    const lead = await this.leadsService.upsertByEmail({
       name: dto.name,
       email: dto.email,
       phone: dto.phone,

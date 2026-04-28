@@ -81,6 +81,28 @@ export class LeadsService {
     return this.leadsRepo.save(lead);
   }
 
+  async upsertByEmail(dto: CreateLeadDto): Promise<Lead> {
+    const normalizedEmail = dto.email.trim().toLowerCase();
+    const existing = await this.leadsRepo.findOne({
+      where: { email: normalizedEmail },
+    });
+    const now = new Date();
+
+    if (!existing) {
+      return this.create({ ...dto, email: normalizedEmail });
+    }
+
+    existing.name = dto.name ?? existing.name;
+    existing.phone = dto.phone ?? existing.phone;
+    if (dto.source !== undefined) existing.source = dto.source;
+    if (dto.notes !== undefined) existing.notes = dto.notes;
+    if (dto.funnelStatus !== undefined) existing.funnelStatus = dto.funnelStatus;
+    if (dto.planId !== undefined) existing.planId = dto.planId;
+    existing.lastInteraction = now;
+    existing.nextInteraction = new Date(now.getTime() + 15 * 60 * 1000);
+    return this.leadsRepo.save(existing);
+  }
+
   async update(id: string, dto: UpdateLeadDto) {
     const lead = await this.findOne(id);
     Object.assign(lead, dto);
