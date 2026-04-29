@@ -66,3 +66,13 @@ export enum MpResourceType {
   PREFERENCE = 'PREFERENCE',
   PREAPPROVAL = 'PREAPPROVAL',
 }
+
+export enum PaymentType {
+  ONE_TIME = 'ONE_TIME',
+  RECURRING = 'RECURRING',
+}
+
+export enum CheckoutSource {
+  LANDING_PAGE = 'landing-page',
+  ADMIN = 'admin',
+}

@@ -20,6 +20,7 @@ import { CheckoutWebhookService } from './services/checkout-webhook.service';
 import { CheckoutSignupService } from './services/checkout-signup.service';
 import { MercadoPagoService } from './services/mercado-pago.service';
 import { SignupTokenService } from './services/signup-token.service';
+import { AdminPaymentLinksService } from './services/admin-payment-links.service';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { SignupTokenService } from './services/signup-token.service';
     CheckoutSignupService,
     MercadoPagoService,
     SignupTokenService,
+    AdminPaymentLinksService,
   ],
   exports: [MercadoPagoService],
 })
