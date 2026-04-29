@@ -121,6 +121,14 @@ export class CheckoutSession {
   @Column({ type: 'int', default: 0 })
   failedChargesCount: number;
 
+  @Column({ type: 'varchar', nullable: true })
+  @Index()
+  source: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  @Index()
+  createdBy: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

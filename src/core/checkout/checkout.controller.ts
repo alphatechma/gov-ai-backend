@@ -13,12 +13,19 @@ import {
 import { ApiBearerAuth, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { JwtOrApiKeyGuard } from '../auth/guards/jwt-or-api-key.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ApiKeyName } from '../auth/decorators/api-key-name.decorator';
+import { UserRole } from '../../shared/enums';
 import { CheckoutService } from './checkout.service';
 import { CheckoutWebhookService } from './services/checkout-webhook.service';
 import { CheckoutSignupService } from './services/checkout-signup.service';
 import { SignupTokenService } from './services/signup-token.service';
+import { AdminPaymentLinksService } from './services/admin-payment-links.service';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto';
+import { CreateAdminPaymentLinkDto } from './dto/create-admin-payment-link.dto';
 import { CreateSignupTenantDto } from './dto/create-signup-tenant.dto';
 import { CreateSignupUserDto } from './dto/create-signup-user.dto';
 import type { MpWebhookBody, MpWebhookQuery } from './dto/mp-webhook.dto';
@@ -31,7 +38,30 @@ export class CheckoutController {
     private webhookService: CheckoutWebhookService,
     private signupService: CheckoutSignupService,
     private signupTokenService: SignupTokenService,
+    private adminPaymentLinksService: AdminPaymentLinksService,
   ) {}
+
+  @Post('admin/payment-links')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  createAdminPaymentLink(
+    @Body() dto: CreateAdminPaymentLinkDto,
+    @CurrentUser('id') adminUserId: string,
+  ) {
+    return this.adminPaymentLinksService.create(adminUserId, dto);
+  }
+
+  @Get('admin/payment-links')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  listAdminPaymentLinks(@Query('limit') limit?: string) {
+    const parsed = limit ? Number(limit) : undefined;
+    return this.adminPaymentLinksService.list(
+      Number.isFinite(parsed) ? (parsed as number) : 50,
+    );
+  }
 
   @Post('session')
   @UseGuards(JwtOrApiKeyGuard)
