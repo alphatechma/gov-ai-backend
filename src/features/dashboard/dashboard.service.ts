@@ -45,21 +45,26 @@ export class DashboardService {
 
   async getStats(tenantId: string) {
     const enabledKeys = await this.getEnabledModuleKeys(tenantId);
-    const counts: Record<string, number> = {};
 
-    for (const [key, { table, moduleKey }] of Object.entries(STAT_MODULE_MAP)) {
-      if (!enabledKeys.has(moduleKey)) continue;
-      try {
-        const result = await this.dataSource.query(
-          `SELECT COUNT(*) as count FROM "${table}" WHERE "tenantId" = $1`,
-          [tenantId],
-        );
-        counts[key] = parseInt(result[0].count, 10);
-      } catch {
-        counts[key] = 0;
-      }
-    }
+    const entries = Object.entries(STAT_MODULE_MAP).filter(
+      ([, { moduleKey }]) => enabledKeys.has(moduleKey),
+    );
 
+    const results = await Promise.all(
+      entries.map(async ([key, { table }]) => {
+        try {
+          const rows = await this.dataSource.query(
+            `SELECT COUNT(*) as count FROM "${table}" WHERE "tenantId" = $1`,
+            [tenantId],
+          );
+          return [key, parseInt(rows[0].count, 10)] as const;
+        } catch {
+          return [key, 0] as const;
+        }
+      }),
+    );
+
+    const counts: Record<string, number> = Object.fromEntries(results);
     return { totals: counts, enabledModules: [...enabledKeys] };
   }
 
@@ -70,46 +75,43 @@ export class DashboardService {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    let todayAppointments = 0;
-    let pendingTasks = 0;
-    let billsInProgress = 0;
-    let pendingHelpRecords = 0;
+    const countOrZero = async (
+      enabled: boolean,
+      sql: string,
+      params: unknown[],
+    ): Promise<number> => {
+      if (!enabled) return 0;
+      const [row] = await this.dataSource.query(sql, params);
+      return parseInt(row.count, 10);
+    };
 
-    if (enabledKeys.has('agenda')) {
-      const [row] = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM "appointments"
-         WHERE "tenantId" = $1 AND "startDate" >= $2 AND "startDate" < $3`,
-        [tenantId, today.toISOString(), tomorrow.toISOString()],
-      );
-      todayAppointments = parseInt(row.count, 10);
-    }
-
-    if (enabledKeys.has('tasks')) {
-      const [row] = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM "tasks"
-         WHERE "tenantId" = $1 AND status IN ('PENDENTE', 'EM_ANDAMENTO')`,
-        [tenantId],
-      );
-      pendingTasks = parseInt(row.count, 10);
-    }
-
-    if (enabledKeys.has('bills')) {
-      const [row] = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM "legislative_bills"
-         WHERE "tenantId" = $1 AND status = 'EM_TRAMITACAO'`,
-        [tenantId],
-      );
-      billsInProgress = parseInt(row.count, 10);
-    }
-
-    if (enabledKeys.has('help-records')) {
-      const [row] = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM "help_records"
-         WHERE "tenantId" = $1 AND status = 'PENDING'`,
-        [tenantId],
-      );
-      pendingHelpRecords = parseInt(row.count, 10);
-    }
+    const [todayAppointments, pendingTasks, billsInProgress, pendingHelpRecords] =
+      await Promise.all([
+        countOrZero(
+          enabledKeys.has('agenda'),
+          `SELECT COUNT(*) as count FROM "appointments"
+           WHERE "tenantId" = $1 AND "startDate" >= $2 AND "startDate" < $3`,
+          [tenantId, today.toISOString(), tomorrow.toISOString()],
+        ),
+        countOrZero(
+          enabledKeys.has('tasks'),
+          `SELECT COUNT(*) as count FROM "tasks"
+           WHERE "tenantId" = $1 AND status IN ('PENDENTE', 'EM_ANDAMENTO')`,
+          [tenantId],
+        ),
+        countOrZero(
+          enabledKeys.has('bills'),
+          `SELECT COUNT(*) as count FROM "legislative_bills"
+           WHERE "tenantId" = $1 AND status = 'EM_TRAMITACAO'`,
+          [tenantId],
+        ),
+        countOrZero(
+          enabledKeys.has('help-records'),
+          `SELECT COUNT(*) as count FROM "help_records"
+           WHERE "tenantId" = $1 AND status = 'PENDING'`,
+          [tenantId],
+        ),
+      ]);
 
     return {
       todayAppointments,
@@ -124,24 +126,25 @@ export class DashboardService {
     const today = new Date();
     const todayMD = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-    const voterBirthdays = enabledKeys.has('voters')
-      ? await this.dataSource.query(
-          `SELECT id, name, "birthDate", phone, email, neighborhood, 'voter' as type
-           FROM "voters"
-           WHERE "tenantId" = $1 AND "birthDate" IS NOT NULL
-           ORDER BY EXTRACT(MONTH FROM "birthDate"), EXTRACT(DAY FROM "birthDate")`,
-          [tenantId],
-        )
-      : [];
-
-    const leaderBirthdays = enabledKeys.has('leaders')
-      ? await this.dataSource.query(
-          `SELECT id, name, phone, email, region as neighborhood, 'leader' as type
-           FROM "leaders"
-           WHERE "tenantId" = $1`,
-          [tenantId],
-        )
-      : [];
+    const [voterBirthdays, leaderBirthdays] = await Promise.all([
+      enabledKeys.has('voters')
+        ? this.dataSource.query(
+            `SELECT id, name, "birthDate", phone, email, neighborhood, 'voter' as type
+             FROM "voters"
+             WHERE "tenantId" = $1 AND "birthDate" IS NOT NULL
+             ORDER BY EXTRACT(MONTH FROM "birthDate"), EXTRACT(DAY FROM "birthDate")`,
+            [tenantId],
+          )
+        : Promise.resolve([]),
+      enabledKeys.has('leaders')
+        ? this.dataSource.query(
+            `SELECT id, name, phone, email, region as neighborhood, 'leader' as type
+             FROM "leaders"
+             WHERE "tenantId" = $1`,
+            [tenantId],
+          )
+        : Promise.resolve([]),
+    ]);
 
     const result: any[] = [];
     const allPeople = [...voterBirthdays, ...leaderBirthdays];
@@ -185,23 +188,24 @@ export class DashboardService {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - period);
 
-    const voters = enabledKeys.has('voters')
-      ? await this.dataSource.query(
-          `SELECT DATE("createdAt") as date, COUNT(*) as count
-           FROM "voters" WHERE "tenantId" = $1 AND "createdAt" >= $2
-           GROUP BY DATE("createdAt") ORDER BY date`,
-          [tenantId, startDate.toISOString()],
-        )
-      : [];
-
-    const visits = enabledKeys.has('visits')
-      ? await this.dataSource.query(
-          `SELECT DATE("createdAt") as date, COUNT(*) as count
-           FROM "visits" WHERE "tenantId" = $1 AND "createdAt" >= $2
-           GROUP BY DATE("createdAt") ORDER BY date`,
-          [tenantId, startDate.toISOString()],
-        )
-      : [];
+    const [voters, visits] = await Promise.all([
+      enabledKeys.has('voters')
+        ? this.dataSource.query(
+            `SELECT DATE("createdAt") as date, COUNT(*) as count
+             FROM "voters" WHERE "tenantId" = $1 AND "createdAt" >= $2
+             GROUP BY DATE("createdAt") ORDER BY date`,
+            [tenantId, startDate.toISOString()],
+          )
+        : Promise.resolve([]),
+      enabledKeys.has('visits')
+        ? this.dataSource.query(
+            `SELECT DATE("createdAt") as date, COUNT(*) as count
+             FROM "visits" WHERE "tenantId" = $1 AND "createdAt" >= $2
+             GROUP BY DATE("createdAt") ORDER BY date`,
+            [tenantId, startDate.toISOString()],
+          )
+        : Promise.resolve([]),
+    ]);
 
     const dateMap: Record<string, { voters: number; visits: number }> = {};
 
@@ -234,38 +238,118 @@ export class DashboardService {
     const now = new Date();
     const result: any = {};
 
-    // Voter analysis (requires 'voters' module)
-    if (enabledKeys.has('voters')) {
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const startOfLastMonth = new Date(
-        now.getFullYear(),
-        now.getMonth() - 1,
-        1,
-      );
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() - 1,
+      1,
+    );
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-      const [thisMonth] = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM "voters"
-         WHERE "tenantId" = $1 AND "createdAt" >= $2`,
-        [tenantId, startOfMonth.toISOString()],
-      );
+    const voterBlock = enabledKeys.has('voters')
+      ? Promise.all([
+          this.dataSource.query(
+            `SELECT COUNT(*) as count FROM "voters"
+             WHERE "tenantId" = $1 AND "createdAt" >= $2`,
+            [tenantId, startOfMonth.toISOString()],
+          ),
+          this.dataSource.query(
+            `SELECT COUNT(*) as count FROM "voters"
+             WHERE "tenantId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3`,
+            [
+              tenantId,
+              startOfLastMonth.toISOString(),
+              startOfMonth.toISOString(),
+            ],
+          ),
+          this.dataSource.query(
+            `SELECT neighborhood, COUNT(*) as count FROM "voters"
+             WHERE "tenantId" = $1 AND neighborhood IS NOT NULL AND neighborhood != ''
+             GROUP BY neighborhood ORDER BY count DESC LIMIT 6`,
+            [tenantId],
+          ),
+          this.dataSource.query(
+            `SELECT COUNT(*) as count FROM "voters" WHERE "tenantId" = $1`,
+            [tenantId],
+          ),
+          this.dataSource.query(
+            `SELECT EXTRACT(DOW FROM "createdAt") as dow, COUNT(*) as count
+             FROM "voters" WHERE "tenantId" = $1 AND "createdAt" >= $2
+             GROUP BY dow ORDER BY dow`,
+            [tenantId, thirtyDaysAgo.toISOString()],
+          ),
+          this.dataSource.query(
+            `SELECT COUNT(*) as count FROM "voters"
+             WHERE "tenantId" = $1 AND "createdAt" >= NOW() - INTERVAL '7 days'`,
+            [tenantId],
+          ),
+          this.dataSource.query(
+            `SELECT COUNT(*) as count FROM "voters"
+             WHERE "tenantId" = $1 AND "createdAt" >= NOW() - INTERVAL '14 days'
+             AND "createdAt" < NOW() - INTERVAL '7 days'`,
+            [tenantId],
+          ),
+        ])
+      : Promise.resolve(null);
 
-      const [lastMonth] = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM "voters"
-         WHERE "tenantId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3`,
-        [tenantId, startOfLastMonth.toISOString(), startOfMonth.toISOString()],
-      );
+    const leaderBlock = enabledKeys.has('leaders')
+      ? Promise.all([
+          this.dataSource.query(
+            `SELECT COUNT(*) as count FROM "voters" WHERE "tenantId" = $1`,
+            [tenantId],
+          ),
+          this.dataSource.query(
+            `SELECT l.id, l.name, l.region, l."votersCount", l."votersGoal", l.active
+             FROM "leaders" l WHERE l."tenantId" = $1 ORDER BY l."votersCount" DESC LIMIT 5`,
+            [tenantId],
+          ),
+          this.dataSource.query(
+            `SELECT COUNT(*) as count FROM "leaders" WHERE "tenantId" = $1 AND active = true`,
+            [tenantId],
+          ),
+          this.dataSource.query(
+            `SELECT COUNT(*) as count FROM "leaders" WHERE "tenantId" = $1`,
+            [tenantId],
+          ),
+          this.dataSource.query(
+            `SELECT COUNT(*) as count FROM "leaders" WHERE "tenantId" = $1 AND "votersCount" = 0`,
+            [tenantId],
+          ),
+        ])
+      : Promise.resolve(null);
 
-      const topNeighborhoods = await this.dataSource.query(
-        `SELECT neighborhood, COUNT(*) as count FROM "voters"
-         WHERE "tenantId" = $1 AND neighborhood IS NOT NULL AND neighborhood != ''
-         GROUP BY neighborhood ORDER BY count DESC LIMIT 6`,
-        [tenantId],
-      );
+    const helpBlock = enabledKeys.has('help-records')
+      ? Promise.all([
+          this.dataSource.query(
+            `SELECT status, COUNT(*) as count FROM "help_records"
+             WHERE "tenantId" = $1 GROUP BY status`,
+            [tenantId],
+          ),
+          this.dataSource.query(
+            `SELECT type, COUNT(*) as count FROM "help_records"
+             WHERE "tenantId" = $1 AND type IS NOT NULL GROUP BY type ORDER BY count DESC`,
+            [tenantId],
+          ),
+        ])
+      : Promise.resolve(null);
 
-      const [totalVoters] = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM "voters" WHERE "tenantId" = $1`,
-        [tenantId],
-      );
+    const [voterRows, leaderRows, helpRows] = await Promise.all([
+      voterBlock,
+      leaderBlock,
+      helpBlock,
+    ]);
+
+    if (voterRows) {
+      const [
+        [thisMonth],
+        [lastMonth],
+        topNeighborhoods,
+        [totalVoters],
+        dayOfWeek,
+        [thisWeek],
+        [lastWeek],
+      ] = voterRows;
 
       const thisMonthCount = parseInt(thisMonth.count, 10);
       const lastMonthCount = parseInt(lastMonth.count, 10);
@@ -290,30 +374,6 @@ export class DashboardService {
         })),
       };
 
-      // Trends (tied to voters)
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-      const dayOfWeek = await this.dataSource.query(
-        `SELECT EXTRACT(DOW FROM "createdAt") as dow, COUNT(*) as count
-         FROM "voters" WHERE "tenantId" = $1 AND "createdAt" >= $2
-         GROUP BY dow ORDER BY dow`,
-        [tenantId, thirtyDaysAgo.toISOString()],
-      );
-
-      const [thisWeek] = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM "voters"
-         WHERE "tenantId" = $1 AND "createdAt" >= NOW() - INTERVAL '7 days'`,
-        [tenantId],
-      );
-
-      const [lastWeek] = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM "voters"
-         WHERE "tenantId" = $1 AND "createdAt" >= NOW() - INTERVAL '14 days'
-         AND "createdAt" < NOW() - INTERVAL '7 days'`,
-        [tenantId],
-      );
-
       result.trends = {
         thisWeek: parseInt(thisWeek.count, 10),
         lastWeek: parseInt(lastWeek.count, 10),
@@ -326,42 +386,25 @@ export class DashboardService {
       };
     }
 
-    // Leader performance (requires 'leaders' module)
-    if (enabledKeys.has('leaders')) {
-      const [totalVoters] = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM "voters" WHERE "tenantId" = $1`,
-        [tenantId],
-      );
+    if (leaderRows) {
+      const [
+        [totalVoters],
+        leaderPerformance,
+        [activeLeaders],
+        [totalLeaders],
+        [zeroVotersLeaders],
+      ] = leaderRows;
+
       const totalVotersCount = parseInt(totalVoters.count, 10);
-
-      const leaderPerformance = await this.dataSource.query(
-        `SELECT l.id, l.name, l.region, l."votersCount", l."votersGoal", l.active
-         FROM "leaders" l WHERE l."tenantId" = $1 ORDER BY l."votersCount" DESC LIMIT 5`,
-        [tenantId],
-      );
-
-      const [activeLeaders] = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM "leaders" WHERE "tenantId" = $1 AND active = true`,
-        [tenantId],
-      );
-
-      const [totalLeaders] = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM "leaders" WHERE "tenantId" = $1`,
-        [tenantId],
-      );
-
-      const [zeroVotersLeaders] = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM "leaders" WHERE "tenantId" = $1 AND "votersCount" = 0`,
-        [tenantId],
-      );
+      const totalLeadersCount = parseInt(totalLeaders.count, 10);
 
       result.leaderPerformance = {
         active: parseInt(activeLeaders.count, 10),
-        total: parseInt(totalLeaders.count, 10),
+        total: totalLeadersCount,
         zeroVoters: parseInt(zeroVotersLeaders.count, 10),
         avgPerLeader:
-          parseInt(totalLeaders.count, 10) > 0
-            ? Math.round(totalVotersCount / parseInt(totalLeaders.count, 10))
+          totalLeadersCount > 0
+            ? Math.round(totalVotersCount / totalLeadersCount)
             : 0,
         top5: leaderPerformance.map((l: any) => ({
           id: l.id,
@@ -377,19 +420,8 @@ export class DashboardService {
       };
     }
 
-    // Help records analysis (requires 'help-records' module)
-    if (enabledKeys.has('help-records')) {
-      const helpByStatus = await this.dataSource.query(
-        `SELECT status, COUNT(*) as count FROM "help_records"
-         WHERE "tenantId" = $1 GROUP BY status`,
-        [tenantId],
-      );
-
-      const helpByType = await this.dataSource.query(
-        `SELECT type, COUNT(*) as count FROM "help_records"
-         WHERE "tenantId" = $1 AND type IS NOT NULL GROUP BY type ORDER BY count DESC`,
-        [tenantId],
-      );
+    if (helpRows) {
+      const [helpByStatus, helpByType] = helpRows;
 
       result.helpRecords = {
         byStatus: Object.fromEntries(
@@ -415,21 +447,24 @@ export class DashboardService {
       { name: 'appointments', label: 'Agenda', moduleKey: 'agenda' },
     ].filter((t) => enabledKeys.has(t.moduleKey));
 
-    const activities: any[] = [];
+    const perTable = await Promise.all(
+      tables.map(({ name, label }) =>
+        this.dataSource
+          .query(
+            `SELECT id, "createdAt" FROM "${name}" WHERE "tenantId" = $1 ORDER BY "createdAt" DESC LIMIT 5`,
+            [tenantId],
+          )
+          .then((rows: any[]) =>
+            rows.map((row) => ({
+              type: label,
+              id: row.id,
+              createdAt: row.createdAt,
+            })),
+          ),
+      ),
+    );
 
-    for (const { name, label } of tables) {
-      const rows = await this.dataSource.query(
-        `SELECT id, "createdAt" FROM "${name}" WHERE "tenantId" = $1 ORDER BY "createdAt" DESC LIMIT 5`,
-        [tenantId],
-      );
-      for (const row of rows) {
-        activities.push({
-          type: label,
-          id: row.id,
-          createdAt: row.createdAt,
-        });
-      }
-    }
+    const activities: any[] = perTable.flat();
 
     activities.sort(
       (a, b) =>
