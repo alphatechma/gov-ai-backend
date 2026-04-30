@@ -23,7 +23,7 @@ export class ModulesController {
   @Get('my')
   getMyModules(@CurrentUser() user: any) {
     if (!user.tenantId) return [];
-    return this.modulesService.findTenantModules(user.tenantId);
+    return this.modulesService.findMyModules(user);
   }
 
   @Get('system')

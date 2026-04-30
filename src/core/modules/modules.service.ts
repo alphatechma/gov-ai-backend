@@ -34,6 +34,25 @@ export class ModulesService {
     });
   }
 
+  async findMyModules(user: any) {
+    const tenantModules = await this.findTenantModules(user.tenantId);
+
+    // Super Admin and Tenant Admin see all enabled modules of the tenant
+    if (
+      user.role === 'SUPER_ADMIN' ||
+      user.role === 'TENANT_ADMIN' ||
+      !user.allowedModules ||
+      user.allowedModules.length === 0
+    ) {
+      return tenantModules;
+    }
+
+    // Other roles only see modules that are both enabled for the tenant and allowed for the user
+    return tenantModules.filter((tm) =>
+      user.allowedModules.includes(tm.moduleKey),
+    );
+  }
+
   async toggleModule(tenantId: string, dto: ToggleModuleDto, userId: string) {
     const tenant = await this.tenantsRepo.findOne({ where: { id: tenantId } });
     if (!tenant) throw new NotFoundException('Tenant não encontrado');
